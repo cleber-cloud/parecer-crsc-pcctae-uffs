@@ -182,6 +182,9 @@ input:focus,select:focus,textarea:focus{
   display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;
   gap:.5rem;margin-bottom:.65rem;
 }
+.section-head-actions{
+  display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;
+}
 .btn-sm{padding:.45rem .75rem;font-size:.72rem;border-radius:8px}
 .crit-actions{
   display:flex;
@@ -546,6 +549,12 @@ textarea{min-height:110px;resize:vertical}
   background:#fffbeb;
   box-shadow:0 0 0 3px rgba(245,158,11,.22);
 }
+.ident-field.unlocked input:not([readonly]),
+.ident-field.unlocked select{
+  border-color:#34d399;
+  background:#ecfdf5;
+  box-shadow:0 0 0 3px rgba(16,185,129,.15);
+}
 .confirm-hint{
   display:block;
   margin-top:.15rem;
@@ -555,6 +564,8 @@ textarea{min-height:110px;resize:vertical}
   letter-spacing:.02em;
 }
 .confirm-hint::before{content:"⚠ ";}
+.confirm-hint.unlock-hint{color:#047857;font-weight:700}
+.confirm-hint.unlock-hint::before{content:"✎ ";}
 
 /* Checklist agrupado (como calculadora) */
 .checklist-groups{display:flex;flex-direction:column;gap:1.1rem}

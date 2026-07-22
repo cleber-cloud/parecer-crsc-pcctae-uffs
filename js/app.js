@@ -32,6 +32,8 @@
     editQtdDeclarada: false,
     /** painel comparação texto×OCR aberto */
     compareOpen: false,
+    /** libera todos os campos de identificação para edição manual */
+    editIdentFields: false,
     /** campos cuja discórdia texto×OCR o usuário já confirmou/editou */
     confirmedFields: {},
     /** índice do item com caixa de diligência aberta */
@@ -547,20 +549,38 @@
       </div>`;
   }
 
+  function syncEditIdentBtn() {
+    const btn = $("btnEditIdent");
+    if (!btn) return;
+    btn.disabled = !state.req;
+    btn.textContent = state.editIdentFields
+      ? "Concluir edição dos campos"
+      : "Editar campos";
+    btn.classList.toggle("btn-primary", state.editIdentFields);
+    btn.classList.toggle("btn-secondary", !state.editIdentFields);
+  }
+
   function renderIdent() {
     const r = state.req;
     if (!r) return;
     $("identBox").classList.remove("hidden");
+    const unlock = !!state.editIdentFields;
 
     const fieldsHtml = IDENT_FIELDS.map((meta) => {
       const key = meta.key;
       const pending = isFieldConfirmPending(key);
       const f = (r._fields && r._fields[key]) || null;
       const val = r[key] != null ? r[key] : "";
-      const cls = "ident-field" + (pending ? " needs-confirm" : "");
+      const editable = unlock || pending;
+      const cls =
+        "ident-field" +
+        (pending ? " needs-confirm" : "") +
+        (unlock && !pending ? " unlocked" : "");
       const hint = pending
         ? `<span class="confirm-hint">Confirme esta informação</span>`
-        : "";
+        : unlock
+          ? `<span class="confirm-hint unlock-hint">Editável</span>`
+          : "";
       let control = "";
       if (meta.type === "nivel") {
         control = `<select data-field="${key}" class="ident-inp">
@@ -576,16 +596,17 @@
       } else if (meta.type === "derived-min") {
         const nv = RSCRegras.NIVEIS[r.nivelRsc];
         const min = nv ? nv.minPontos : val;
+        // mínima segue o nível (canônica); só exibe
         control = `<input type="text" data-field="${key}" class="ident-inp" value="${esc(
           min != null ? min : "—"
-        )}" readonly title="Valor fixo do Decreto/calculadora conforme o nível RSC" />`;
+        )}" readonly title="Valor fixo do Decreto conforme o nível RSC (mude o nível para alterar)" />`;
       } else {
-        const ro = pending ? "" : "readonly";
+        const ro = editable ? "" : "readonly";
         control = `<input type="${
           meta.type === "number" ? "number" : meta.type === "email" ? "email" : "text"
         }" data-field="${key}" class="ident-inp" value="${esc(
           val
-        )}" step="any" ${pending ? "" : ro} />`;
+        )}" step="any" ${ro} />`;
       }
       const dual =
         meta.type === "derived-min"
@@ -607,13 +628,19 @@
 
     $("identBox").innerHTML = `
       <p class="muted small" style="margin:0 0 .65rem">
-        Campos em <strong style="color:#b45309">amarelo</strong> não tiveram concordância entre texto nativo e OCR — confirme ou corrija.
+        Campos em <strong style="color:#b45309">amarelo</strong> sem concordância texto × OCR.
+        Use <strong>Editar campos</strong> para liberar todos os valores manualmente.
+        ${
+          unlock
+            ? ' <span style="color:#0a7a3a;font-weight:700">Modo edição ativo.</span>'
+            : ""
+        }
       </p>
       <div class="ident-form">${fieldsHtml}</div>`;
 
     $("identBox").querySelectorAll(".ident-inp").forEach((el) => {
       const key0 = el.getAttribute("data-field");
-      if (key0 === "pontuacaoMinimaDeclarada") return; // sempre canônico
+      if (key0 === "pontuacaoMinimaDeclarada") return; // sempre canônico pelo nível
       const apply = () => {
         const key = el.getAttribute("data-field");
         let v = el.value;
@@ -628,7 +655,6 @@
         markFieldConfirmed(key);
         if (key === "nivelRsc") {
           applyCanonicalMinFromNivel();
-          // atualiza o campo readonly da mínima
           const minEl = $("identBox").querySelector(
             '[data-field="pontuacaoMinimaDeclarada"]'
           );
@@ -649,8 +675,7 @@
         if (wrap) {
           wrap.classList.remove("needs-confirm");
           const h = wrap.querySelector(".confirm-hint");
-          if (h) h.remove();
-          el.removeAttribute("readonly");
+          if (h && !unlock) h.remove();
         }
         updateAvaliacao();
         scheduleAutosave();
@@ -658,6 +683,7 @@
       el.addEventListener("change", apply);
       el.addEventListener("blur", apply);
     });
+    syncEditIdentBtn();
     renderCompare();
   }
 
@@ -1156,6 +1182,7 @@
       state.diligenciaOpenIdx = null;
       state.obsOpenIdx = null;
       state.compareOpen = false;
+      state.editIdentFields = false;
       state.editQtdDeclarada = false;
       applyCanonicalMinFromNivel();
       renderIdent();
@@ -1169,6 +1196,7 @@
       updateDiligenciaBtn();
       const btnCmp = $("btnToggleCompare");
       if (btnCmp) btnCmp.disabled = false;
+      syncEditIdentBtn();
       scheduleAutosave();
       persistSession();
       const m = data._merge || {};
@@ -2011,6 +2039,21 @@
         if (!state.req) return;
         state.compareOpen = !state.compareOpen;
         renderCompare();
+      });
+    }
+    const btnEditIdent = $("btnEditIdent");
+    if (btnEditIdent) {
+      btnEditIdent.addEventListener("click", () => {
+        if (!state.req) return;
+        state.editIdentFields = !state.editIdentFields;
+        renderIdent();
+        toast(
+          state.editIdentFields
+            ? "Campos liberados para edição manual."
+            : "Edição dos campos concluída.",
+          "info"
+        );
+        scheduleAutosave();
       });
     }
     $("btnParecer").addEventListener("click", gerarParecer);
