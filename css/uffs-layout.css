@@ -134,6 +134,41 @@ input:focus,select:focus,textarea:focus{
   cursor:pointer;
 }
 .file-drop strong{color:var(--uffs-green)}
+.file-drop-compact{padding:.75rem 1rem}
+.file-drop-compact p{margin:.15rem 0}
+.hero-compact{padding:1.15rem 1.35rem;margin-bottom:1rem}
+.hero-compact h2{font-size:1.35rem;margin:0 0 .35rem}
+.card-tight{padding:1rem 1.15rem}
+.card-tight h3{margin:0 0 .75rem}
+.section-head-row{
+  display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;
+  gap:.5rem;margin-bottom:.65rem;
+}
+.btn-sm{padding:.45rem .75rem;font-size:.72rem;border-radius:8px}
+.btn-obs{
+  border:0;border-radius:999px;padding:.45rem .85rem;
+  font:700 .72rem/1 "Fira Sans","Segoe UI",Arial,sans-serif;
+  text-transform:uppercase;letter-spacing:.03em;cursor:pointer;
+  background:#eef2ff;color:#3730a3;white-space:nowrap;
+}
+.btn-obs:hover{background:#e0e7ff}
+.btn-obs.active{background:#ddd6fe;box-shadow:inset 0 0 0 1px #8b5cf6}
+.crit-actions{display:flex;flex-wrap:wrap;gap:.4rem;justify-content:flex-end}
+.qty-pill.editable-decl input.qtd-decl{
+  width:3.6rem;text-align:center;font-weight:800;font-size:.95rem;
+  border-radius:999px;background:#fffbeb;border:1.5px solid #f59e0b;
+  padding:.25rem .2rem;color:#92400e;
+}
+.qty-pill.editing-decl{background:#fffbeb;border-color:#fcd34d}
+.obs-saved{
+  font-size:.78rem;color:#3730a3;background:#eef2ff;border:1px solid #c7d2fe;
+  border-radius:10px;padding:.45rem .65rem;margin-top:.35rem;
+}
+.obs-box{
+  grid-column:1 / -1;margin-top:.15rem;padding:.75rem .9rem;
+  border-radius:14px;border:1px solid #c7d2fe;background:#eef2ff;
+}
+.obs-box textarea{min-height:64px;border-radius:12px;background:#fff;margin-bottom:.55rem}
 .muted{color:var(--uffs-muted);font-size:.9rem}
 .table-wrap{overflow:auto}
 table.checklist{

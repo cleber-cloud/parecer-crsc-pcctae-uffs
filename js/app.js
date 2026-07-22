@@ -19,11 +19,24 @@
     signerChecked: {},
     /** ocultar linhas com qtdDeclarada === 0 */
     hideZeroCriterios: true,
+    /** permitir editar quantidades declaradas no catálogo */
+    editQtdDeclarada: false,
+    /** painel comparação texto×OCR aberto */
+    compareOpen: false,
     /** campos cuja discórdia texto×OCR o usuário já confirmou/editou */
     confirmedFields: {},
     /** índice do item com caixa de diligência aberta */
     diligenciaOpenIdx: null,
+    /** índice do item com caixa de observação aberta */
+    obsOpenIdx: null,
   };
+
+  function todayISO() {
+    const d = new Date();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return d.getFullYear() + "-" + m + "-" + day;
+  }
 
   const IDENT_FIELDS = [
     { key: "nome", label: "Servidor (nome)", type: "text" },
@@ -341,10 +354,18 @@
 
   function renderCompare() {
     const box = $("compareBox");
+    const btn = $("btnToggleCompare");
     if (!box) return;
     const r = state.req;
-    if (!r || !r._fields) {
+    if (btn) {
+      btn.disabled = !r || !r._fields;
+      btn.textContent = state.compareOpen
+        ? "Ocultar comparação texto × OCR"
+        : "Comparação texto × OCR";
+    }
+    if (!r || !r._fields || !state.compareOpen) {
       box.classList.add("hidden");
+      box.innerHTML = "";
       return;
     }
     const m = r._merge || {};
@@ -420,17 +441,15 @@
 
     box.classList.remove("hidden");
     box.innerHTML = `
-      <details class="compare-panel" open>
-        <summary>
+      <div class="compare-panel">
+        <p style="margin:0 0 .4rem">
           <strong>Comparação texto nativo × OCR</strong>
           <span class="muted small" style="margin-left:.5rem">
             scores texto ${m.scoreText ?? "—"} / OCR ${m.scoreOcr ?? "—"} ·
-            ${m.fieldsAgree ?? 0} campos em acordo ·
-            ${m.fieldsConflict ?? 0} conflito(s) ·
-            itens: ${esc(m.itensStrategy || "—")}
+            ${m.fieldsAgree ?? 0} em acordo · ${m.fieldsConflict ?? 0} conflito(s)
           </span>
-        </summary>
-        <p class="muted small" style="margin:.5rem 0">${ocrNote}</p>
+        </p>
+        <p class="muted small" style="margin:.35rem 0">${ocrNote}</p>
         <div class="table-wrap">
           <table class="compare-table">
             <thead>
@@ -445,13 +464,7 @@
             <tbody>${rows}</tbody>
           </table>
         </div>
-        <p class="muted small" style="margin:.6rem 0 0">
-          Itens: <strong>${(r._textOnly && r._textOnly.itens && r._textOnly.itens.length) || 0}</strong> (texto) ·
-          <strong>${(r._ocrOnly && r._ocrOnly.itens && r._ocrOnly.itens.length) || 0}</strong> (OCR) ·
-          <strong>${(r.itens && r.itens.length) || 0}</strong> (fusão).
-          Linhas amarelas = discórdia resolvida; verdes = acordo.
-        </p>
-      </details>`;
+      </div>`;
   }
 
   function renderIdent() {
@@ -582,6 +595,16 @@
       : "Ocultar critérios sem pontuação declarada";
   }
 
+  function syncEditQtdBtn() {
+    const btn = $("btnEditQtdDecl");
+    if (!btn) return;
+    btn.textContent = state.editQtdDeclarada
+      ? "Concluir edição das quantidades declaradas"
+      : "Editar quantidade declarada";
+    btn.classList.toggle("btn-primary", state.editQtdDeclarada);
+    btn.classList.toggle("btn-secondary", !state.editQtdDeclarada);
+  }
+
   function renderChecklist() {
     const box = $("checklistBody");
     box.innerHTML = "";
@@ -622,6 +645,7 @@
           : "");
     }
     syncHideZeroBtn();
+    syncEditQtdBtn();
 
     const cats = (window.RSCCriterios && window.RSCCriterios.getCategorias()) ||
       window.RSC_CATEGORIAS || {
@@ -670,10 +694,15 @@
               ? "pend"
               : "ok";
         const hasDil = !!(it.diligencia && it.diligencia.texto);
-        const open = state.diligenciaOpenIdx === idx;
+        const hasObs = !!(it.observacao && String(it.observacao).trim());
+        const openDil = state.diligenciaOpenIdx === idx;
+        const openObs = state.obsOpenIdx === idx;
         const card = document.createElement("article");
         card.className = "crit-card " + st;
         card.setAttribute("data-idx", String(idx));
+        const qDeclHtml = state.editQtdDeclarada
+          ? `<input type="number" min="0" step="any" class="qtd-decl" data-idx="${idx}" value="${qDecl}" />`
+          : `<span class="val">${qDecl}</span>`;
         card.innerHTML = `
           <div class="crit-main">
             <span class="crit-id">${esc(it.criterionId || "—")}</span>
@@ -682,18 +711,25 @@
               it.pontosUnitario != null ? it.pontosUnitario : "—"
             } pts/unid.</div>
             ${
-              hasDil && !open
+              hasDil && !openDil
                 ? `<div class="diligencia-saved"><strong>Diligência:</strong> ${esc(
                     it.diligencia.texto
+                  )}</div>`
+                : ""
+            }
+            ${
+              hasObs && !openObs
+                ? `<div class="obs-saved"><strong>Observação:</strong> ${esc(
+                    it.observacao
                   )}</div>`
                 : ""
             }
           </div>
           <div class="crit-side">
             <div class="qty-row">
-              <div class="qty-pill">
+              <div class="qty-pill${state.editQtdDeclarada ? " editing-decl editable-decl" : ""}">
                 <label>Qtd decl.</label>
-                <span class="val">${qDecl}</span>
+                ${qDeclHtml}
               </div>
               <div class="qty-pill">
                 <label>Qtd aceita</label>
@@ -706,14 +742,21 @@
                 <span class="val pts-aceitos" data-idx="${idx}">${pts}</span>
               </div>
             </div>
-            <button type="button" class="btn-diligencia ${
-              hasDil ? "active" : ""
-            }" data-idx="${idx}">
-              ${hasDil ? "Editar diligência" : "Marcar para diligência"}
-            </button>
+            <div class="crit-actions">
+              <button type="button" class="btn-diligencia ${
+                hasDil ? "active" : ""
+              }" data-idx="${idx}">
+                ${hasDil ? "Editar diligência" : "Marcar para diligência"}
+              </button>
+              <button type="button" class="btn-obs ${
+                hasObs ? "active" : ""
+              }" data-idx="${idx}">
+                ${hasObs ? "Editar observação" : "Observação"}
+              </button>
+            </div>
           </div>
           ${
-            open
+            openDil
               ? `<div class="diligencia-box" data-dil-box="${idx}">
                   <label for="dilTxt${idx}">Descreva sua diligência:</label>
                   <textarea id="dilTxt${idx}" placeholder="Informe o que deve ser complementado ou esclarecido neste critério…">${esc(
@@ -725,6 +768,25 @@
                     ${
                       hasDil
                         ? `<button type="button" class="btn btn-secondary btn-clear-dil" data-idx="${idx}">Remover</button>`
+                        : ""
+                    }
+                  </div>
+                </div>`
+              : ""
+          }
+          ${
+            openObs
+              ? `<div class="obs-box" data-obs-box="${idx}">
+                  <label for="obsTxt${idx}">Observação da comissão:</label>
+                  <textarea id="obsTxt${idx}" placeholder="Anotação interna ou ressalva sobre este critério…">${esc(
+                    it.observacao || ""
+                  )}</textarea>
+                  <div class="btn-row">
+                    <button type="button" class="btn btn-primary btn-save-obs" data-idx="${idx}">Salvar observação</button>
+                    <button type="button" class="btn btn-secondary btn-cancel-obs" data-idx="${idx}">Cancelar</button>
+                    ${
+                      hasObs
+                        ? `<button type="button" class="btn btn-secondary btn-clear-obs" data-idx="${idx}">Remover</button>`
                         : ""
                     }
                   </div>
@@ -744,34 +806,71 @@
         '<p class="muted">Nenhum critério com pontuação declarada. Use “Mostrar todos os critérios”.</p>';
     }
 
+    function refreshItemPts(i) {
+      const it = state.req.itens[i];
+      const pu = Number(it.pontosUnitario) || 0;
+      const q = Number(it.qtdAceita) || 0;
+      it.pontosObtidos =
+        Math.round((Number(it.qtdDeclarada) || 0) * pu * 10) / 10;
+      const pts = Math.round(q * pu * 10) / 10;
+      const cell = box.querySelector(`.pts-aceitos[data-idx="${i}"]`);
+      if (cell) cell.textContent = String(pts);
+      const card = box.querySelector(`.crit-card[data-idx="${i}"]`);
+      const qd = Number(it.qtdDeclarada) || 0;
+      if (card) {
+        card.className =
+          "crit-card " +
+          (q <= 0 ? (qd > 0 ? "no" : "zero") : q < qd ? "pend" : "ok");
+      }
+      updateAvaliacao();
+    }
+
+    box.querySelectorAll(".qtd-decl").forEach((el) => {
+      el.addEventListener("input", () => {
+        const i = Number(el.getAttribute("data-idx"));
+        let v = Number(el.value);
+        if (!Number.isFinite(v) || v < 0) v = 0;
+        state.req.itens[i].qtdDeclarada = v;
+        // se aceita era igual à antiga declarada ou maior que a nova, alinha
+        const qa = Number(state.req.itens[i].qtdAceita);
+        if (!Number.isFinite(qa) || qa > v) {
+          state.req.itens[i].qtdAceita = v;
+          const ace = box.querySelector(`.qtd-aceita[data-idx="${i}"]`);
+          if (ace) ace.value = String(v);
+        }
+        state.req.itens[i].aceito =
+          Number(state.req.itens[i].qtdAceita) > 0 ? "ok" : "no";
+        refreshItemPts(i);
+      });
+    });
+
     box.querySelectorAll(".qtd-aceita").forEach((el) => {
       el.addEventListener("input", () => {
         const i = Number(el.getAttribute("data-idx"));
         let v = Number(el.value);
         if (!Number.isFinite(v) || v < 0) v = 0;
         const max = Number(state.req.itens[i].qtdDeclarada);
-        if (Number.isFinite(max) && max > 0 && v > max) v = max;
+        if (Number.isFinite(max) && max >= 0 && v > max) v = max;
         state.req.itens[i].qtdAceita = v;
         state.req.itens[i].aceito = v <= 0 ? "no" : "ok";
-        const pts = pontosItem(state.req.itens[i]);
-        const cell = box.querySelector(`.pts-aceitos[data-idx="${i}"]`);
-        if (cell) cell.textContent = String(pts);
-        const card = el.closest(".crit-card");
-        const qd = Number(state.req.itens[i].qtdDeclarada) || 0;
-        if (card) {
-          card.className =
-            "crit-card " +
-            (v <= 0 ? (qd > 0 ? "no" : "zero") : v < qd ? "pend" : "ok");
-        }
-        updateAvaliacao();
+        refreshItemPts(i);
       });
     });
 
     box.querySelectorAll(".btn-diligencia").forEach((btn) => {
       btn.addEventListener("click", () => {
         const i = Number(btn.getAttribute("data-idx"));
+        state.obsOpenIdx = null;
         state.diligenciaOpenIdx =
           state.diligenciaOpenIdx === i ? null : i;
+        renderChecklist();
+      });
+    });
+    box.querySelectorAll(".btn-obs").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const i = Number(btn.getAttribute("data-idx"));
+        state.diligenciaOpenIdx = null;
+        state.obsOpenIdx = state.obsOpenIdx === i ? null : i;
         renderChecklist();
       });
     });
@@ -788,16 +887,16 @@
           texto: txt,
           em: new Date().toISOString(),
         };
-        state.req.itens[i].obs = txt;
         state.diligenciaOpenIdx = null;
-        // marcar que houve diligências no processo
-        state.diligencias = true;
-        const chk = $("chkDiligencias");
-        if (chk) chk.checked = true;
-        syncDiligenciaDatasUI();
+        // NÃO marca o checkbox "Houve diligências" (isso é só no parecer final)
         renderChecklist();
         updateDiligenciaBtn();
-        toast("Diligência salva no item " + (state.req.itens[i].criterionId || i), "ok");
+        toast(
+          "Diligência salva no item " +
+            (state.req.itens[i].criterionId || i) +
+            ". Use “Gerar diligência (PDF)” quando quiser.",
+          "ok"
+        );
       });
     });
     box.querySelectorAll(".btn-cancel-dil").forEach((btn) => {
@@ -810,10 +909,38 @@
       btn.addEventListener("click", () => {
         const i = Number(btn.getAttribute("data-idx"));
         state.req.itens[i].diligencia = null;
-        state.req.itens[i].obs = "";
         state.diligenciaOpenIdx = null;
         renderChecklist();
         updateDiligenciaBtn();
+      });
+    });
+    box.querySelectorAll(".btn-save-obs").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const i = Number(btn.getAttribute("data-idx"));
+        const ta = document.getElementById("obsTxt" + i);
+        const txt = (ta && ta.value.trim()) || "";
+        if (!txt) {
+          toast("Digite a observação antes de salvar.", "err");
+          return;
+        }
+        state.req.itens[i].observacao = txt;
+        state.obsOpenIdx = null;
+        renderChecklist();
+        toast("Observação salva.", "ok");
+      });
+    });
+    box.querySelectorAll(".btn-cancel-obs").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.obsOpenIdx = null;
+        renderChecklist();
+      });
+    });
+    box.querySelectorAll(".btn-clear-obs").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const i = Number(btn.getAttribute("data-idx"));
+        state.req.itens[i].observacao = "";
+        state.obsOpenIdx = null;
+        renderChecklist();
       });
     });
 
@@ -926,15 +1053,21 @@
       state.hipotesesSelecionadas = [];
       state.confirmedFields = {};
       state.diligenciaOpenIdx = null;
+      state.obsOpenIdx = null;
+      state.compareOpen = false;
+      state.editQtdDeclarada = false;
       applyCanonicalMinFromNivel();
       renderIdent();
       renderChecklist();
+      renderCompare();
       renderHipotesesDropdown();
       $("step2").classList.remove("hidden");
       $("step3").classList.remove("hidden");
       updateAvaliacao();
       checkImpedimento();
       updateDiligenciaBtn();
+      const btnCmp = $("btnToggleCompare");
+      if (btnCmp) btnCmp.disabled = false;
       const m = data._merge || {};
       const cat = data._catalogMeta || {};
       const comQtd =
@@ -1000,11 +1133,31 @@
       dataRetornoDiligencia: state.dataRetornoDiligencia
         ? fmtDateBr(state.dataRetornoDiligencia)
         : "",
-      vigencia: state.vigencia,
+      vigencia: state.vigencia || fmtDateBr(todayISO()),
       comissao: RSCComissoes.getComissao(state.comissaoId),
       assinantes: collectAssinantes(),
       avaliacao: av,
       complexidadeDesc: av.nivel?.complexidadeDesc,
+      itensRelatorio: (state.req.itens || [])
+        .filter(
+          (i) =>
+            (Number(i.qtdDeclarada) || 0) > 0 ||
+            (Number(i.qtdAceita) || 0) > 0 ||
+            (i.diligencia && i.diligencia.texto) ||
+            (i.observacao && String(i.observacao).trim())
+        )
+        .map((i) => ({
+          criterionId: i.criterionId,
+          grupo: i.grupo,
+          descricao: i.descricao,
+          unidade: i.unidade,
+          pontosUnitario: i.pontosUnitario,
+          qtdDeclarada: i.qtdDeclarada,
+          qtdAceita: i.qtdAceita,
+          pontosAceitos: pontosItem(i),
+          observacao: i.observacao || "",
+          diligencia: (i.diligencia && i.diligencia.texto) || "",
+        })),
     };
   }
 
@@ -1016,7 +1169,7 @@
     if (state.diligencias) {
       if (!state.dataEnvioDiligencia || !state.dataRetornoDiligencia) {
         return toast(
-          "Houve diligências: informe a data de envio ao servidor e a data de retorno à comissão.",
+          "No parecer final com diligência já devolvida: informe data de envio e data de retorno à comissão.",
           "err"
         );
       }
@@ -1079,21 +1232,18 @@
       );
     }
 
-    // ao gerar diligência, garantir flag e pedir datas se ainda não houver
-    state.diligencias = true;
-    const chk = $("chkDiligencias");
-    if (chk) chk.checked = true;
-    syncDiligenciaDatasUI();
-    if (!state.dataEnvioDiligencia) {
-      return toast(
-        "Informe a data de envio da diligência ao servidor (no passo 1).",
-        "err"
-      );
-    }
+    // Data da diligência = hoje (não usa o checkbox nem a data de retorno)
+    const dataDil = fmtDateBr(todayISO());
 
     const av = RSCRegras.avaliar(state.req, itensParaAvaliacao());
     const ctx = {
-      ...buildBaseCtx(av),
+      req: state.req,
+      numeroProcesso: state.numeroProcesso.trim(),
+      dataRequerimento: state.dataRequerimento || "—",
+      dataEnvioDiligencia: dataDil,
+      comissao: RSCComissoes.getComissao(state.comissaoId),
+      assinantes: collectAssinantes(),
+      avaliacao: av,
       itensDiligencia: itensDil.map((i) => ({
         criterionId: i.criterionId,
         grupo: i.grupo,
@@ -1113,7 +1263,7 @@
         bytes,
         `Diligencia_RSC_${(state.req.siape || "servidor").replace(/\W/g, "")}_${state.numeroProcesso.replace(/\W/g, "_")}.pdf`
       );
-      toast("PDF de diligência gerado.", "ok");
+      toast("PDF de diligência gerado (data de hoje).", "ok");
     } catch (e) {
       console.error(e);
       toast(e.message || "Erro ao gerar diligência", "err");
@@ -1185,28 +1335,38 @@
       state.hideZeroCriterios = !state.hideZeroCriterios;
       renderChecklist();
     });
-    $("btnAllOk").addEventListener("click", () => {
-      if (!state.req) return;
-      state.req.itens.forEach((i) => {
-        i.qtdAceita = i.qtdDeclarada ?? i.qtdAceita ?? 0;
-        i.aceito = Number(i.qtdAceita) > 0 ? "ok" : "no";
+    const btnEditQ = $("btnEditQtdDecl");
+    if (btnEditQ) {
+      btnEditQ.addEventListener("click", () => {
+        state.editQtdDeclarada = !state.editQtdDeclarada;
+        renderChecklist();
+        toast(
+          state.editQtdDeclarada
+            ? "Quantidades declaradas editáveis (destaque amarelo)."
+            : "Edição das quantidades declaradas concluída.",
+          "info"
+        );
       });
-      renderChecklist();
-      updateAvaliacao();
-    });
-    $("btnAllNo").addEventListener("click", () => {
-      if (!state.req) return;
-      state.req.itens.forEach((i) => {
-        i.qtdAceita = 0;
-        i.aceito = "no";
+    }
+    const btnCmp = $("btnToggleCompare");
+    if (btnCmp) {
+      btnCmp.addEventListener("click", () => {
+        if (!state.req) return;
+        state.compareOpen = !state.compareOpen;
+        renderCompare();
       });
-      renderChecklist();
-      updateAvaliacao();
-    });
+    }
     $("btnParecer").addEventListener("click", gerarParecer);
     const btnDil = $("btnGerarDiligencia");
     if (btnDil) btnDil.addEventListener("click", gerarDiligencia);
     syncDiligenciaDatasUI();
+
+    // vigência padrão = hoje
+    const vig = $("vigencia");
+    if (vig && !vig.value) {
+      vig.value = todayISO();
+      state.vigencia = fmtDateBr(todayISO());
+    }
 
     // toggle painel hipóteses
     const toggle = $("toggleHipoteses");

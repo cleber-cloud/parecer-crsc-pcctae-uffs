@@ -23,20 +23,19 @@
   </header>
 
   <main class="wrap">
-    <section class="hero">
+    <section class="hero hero-compact">
       <div class="badge">Ferramenta auxiliar da comissão</div>
       <h2>Avaliar requerimento e emitir <span>parecer</span></h2>
-      <p class="muted" style="max-width:40rem;margin:0">
-        Carregue o PDF do Requerimento gerado pela
+      <p class="muted" style="max-width:42rem;margin:0">
+        Carregue o PDF do Requerimento da
         <a href="https://calculadora-rsc.uffs.edu.br/" target="_blank" rel="noopener">calculadora RSC</a>,
-        confira o checklist, escolha a CRSC do campus/Reitoria e gere o parecer em PDF.
-        Base: Decreto nº 13.048/2026, IN PROGESP nº 9/2026 e Regimento (Portaria 4725/GR/UFFS/2026).
+        confira o checklist e emita diligência ou parecer. Base: Decreto nº 13.048/2026 e Regimento CRSC.
       </p>
     </section>
 
     <div id="toast" class="alert alert-info hidden" role="status"></div>
 
-    <section class="card" id="step1">
+    <section class="card card-tight" id="step1">
       <h3>1. Processo e unidade da CRSC</h3>
       <div class="grid-2">
         <div>
@@ -52,17 +51,18 @@
           <label for="dataReq">Data do requerimento</label>
           <input id="dataReq" type="date" />
         </div>
-        <div>
-          <label for="vigencia">Vigência da concessão (se favorável)</label>
-          <input id="vigencia" type="date" />
-        </div>
-        <div style="display:flex;flex-direction:column;gap:.6rem;justify-content:flex-end">
-          <label class="signer" style="margin:0"><input id="chkPrioridade" type="checkbox" /> Prioridade legal (idoso, deficiência, doença grave etc.)</label>
-          <label class="signer" style="margin:0"><input id="chkDiligencias" type="checkbox" /> Houve diligências</label>
+        <div style="display:flex;flex-direction:column;gap:.55rem;justify-content:flex-end">
+          <label class="signer" style="margin:0"><input id="chkPrioridade" type="checkbox" /> Prioridade legal</label>
+          <label class="signer" style="margin:0" title="Marque apenas no parecer final, se a diligência já retornou">
+            <input id="chkDiligencias" type="checkbox" /> Houve diligências
+            <span class="muted small" style="font-weight:500">(parecer final — diligência já devolvida)</span>
+          </label>
         </div>
       </div>
       <div id="diligenciaDatas" class="diligencia-datas hidden">
-        <p class="muted small" style="margin:0 0 .65rem">Informe as datas do trâmite de diligência no processo.</p>
+        <p class="muted small" style="margin:0 0 .65rem">
+          Datas para o <strong>parecer final</strong> (diligência já cumprida e processo de volta à comissão).
+        </p>
         <div class="grid-2">
           <div>
             <label for="dataEnvioDil">Data de envio da diligência ao servidor *</label>
@@ -78,38 +78,40 @@
       <div style="margin-top:1rem">
         <label>Assinantes da CRSC (titular e suplente por segmento)</label>
         <p class="muted small" style="margin:.25rem 0 .5rem">
-          Marcar o <strong>titular</strong> desmarca o suplente do mesmo segmento; marcar o <strong>suplente</strong> desmarca o titular.
+          Marcar o <strong>titular</strong> desmarca o suplente do mesmo segmento e vice-versa.
         </p>
         <div id="signers" class="signers"></div>
       </div>
     </section>
 
-    <section class="card">
-      <h3>2. PDF do Requerimento</h3>
-      <div class="file-drop" id="fileDrop">
-        <p><strong>Arraste o PDF</strong> ou clique para selecionar</p>
-        <p class="muted small">Arquivo gerado pela calculadora RSC-PCCTAE UFFS · <strong>texto nativo + OCR</strong> em todas as páginas (fusão campo a campo)</p>
-        <p id="fileName" class="small" style="margin-top:.5rem"></p>
-        <div id="ocrProgress" class="muted small hidden" style="margin-top:.5rem"></div>
+    <section class="card card-tight" id="stepPdf">
+      <div class="section-head-row">
+        <h3 style="margin:0">2. PDF do Requerimento</h3>
+        <button type="button" class="btn btn-secondary btn-sm" id="btnToggleCompare" disabled>
+          Comparação texto × OCR
+        </button>
+      </div>
+      <div class="file-drop file-drop-compact" id="fileDrop">
+        <p><strong>Arraste o PDF</strong> ou clique para selecionar · texto nativo + OCR</p>
+        <p id="fileName" class="small" style="margin:.25rem 0 0"></p>
+        <div id="ocrProgress" class="muted small hidden" style="margin-top:.35rem"></div>
         <div id="ocrBar" class="ocr-bar hidden" aria-hidden="true"><div id="ocrBarFill" class="ocr-bar-fill"></div></div>
         <input id="fileInput" type="file" accept="application/pdf,.pdf" class="hidden" />
       </div>
-      <div id="identBox" class="hidden" style="margin-top:1rem"></div>
-      <div id="compareBox" class="hidden" style="margin-top:1rem"></div>
+      <div id="identBox" class="hidden" style="margin-top:.85rem"></div>
+      <div id="compareBox" class="hidden" style="margin-top:.75rem"></div>
     </section>
 
     <section class="card hidden" id="step2">
       <h3>3. Checklist de critérios</h3>
       <p class="muted small">
-        Grupo, descrição, unidade e pontos por unidade vêm do <strong>catálogo canônico</strong>
-        (Decreto / calculadora RSC). Do PDF só entram as <strong>quantidades declaradas</strong>.
-        Ajuste a qtd aceita (unidades comprovadas). Pontos aceitos = qtd aceita × pts/unidade.
+        Grupo, descrição, unidade e pontos vêm do <strong>catálogo canônico</strong>.
+        Ajuste a <strong>qtd aceita</strong> (comprovada). Pontos = qtd aceita × pts/unidade.
       </p>
       <p id="catalogInfo" class="muted small" style="margin:.35rem 0 0"></p>
       <div class="btn-row" style="margin-top:.75rem">
         <button type="button" class="btn btn-secondary" id="btnHideZero">Ocultar critérios sem pontuação declarada</button>
-        <button type="button" class="btn btn-secondary" id="btnAllOk">Aceitar todas as quantidades</button>
-        <button type="button" class="btn btn-secondary" id="btnAllNo">Zerar todas as quantidades</button>
+        <button type="button" class="btn btn-secondary" id="btnEditQtdDecl">Editar quantidade declarada</button>
       </div>
       <div id="checklistBody" class="checklist-groups" style="margin-top:1rem"></div>
       <div class="btn-row" style="margin-top:1.25rem">
@@ -124,8 +126,8 @@
 
       <div style="margin-top:1.25rem">
         <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem">
-          <label style="margin:0">Hipóteses de indeferimento — art. 14 do Decreto nº 13.048/2026 (texto literal)</label>
-          <button type="button" class="btn btn-secondary" id="toggleHipoteses">Mostrar / ocultar</button>
+          <label style="margin:0">Hipóteses de indeferimento — art. 14 (texto literal)</label>
+          <button type="button" class="btn btn-secondary btn-sm" id="toggleHipoteses">Mostrar / ocultar</button>
         </div>
         <div id="hipotesesPanel" class="hipoteses-panel">
           <div id="hipotesesChecks"></div>
@@ -133,9 +135,16 @@
       </div>
 
       <div style="margin-top:1rem">
-        <label for="justificativa">Justificativa (obrigatória se não favorável — montada com os incisos marcados; pode editar)</label>
+        <label for="justificativa">Justificativa (obrigatória se não favorável)</label>
         <textarea id="justificativa" placeholder="Marque os incisos do art. 14 acima para preencher o texto literal."></textarea>
       </div>
+
+      <div style="margin-top:1.15rem;max-width:22rem">
+        <label for="vigencia">Vigência da concessão (se favorável)</label>
+        <input id="vigencia" type="date" />
+        <p class="muted small" style="margin:.35rem 0 0">Padrão: data de hoje. Ajuste se necessário.</p>
+      </div>
+
       <div class="btn-row">
         <button type="button" class="btn btn-primary" id="btnParecer" disabled>Gerar parecer PDF</button>
       </div>

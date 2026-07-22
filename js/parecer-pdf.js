@@ -1,5 +1,5 @@
 /**
- * Gera PDF do parecer CRSC-PCCTAE.
+ * Gera PDF do parecer CRSC-PCCTAE e PDF de diligência.
  */
 (function (global) {
   "use strict";
@@ -46,7 +46,10 @@
   }
 
   function wrap(text, font, size, maxW) {
-    const words = String(text || "").replace(/\s+/g, " ").trim().split(" ");
+    const words = String(text || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .split(" ");
     const lines = [];
     let line = "";
     for (const w of words) {
@@ -61,17 +64,14 @@
     return lines.length ? lines : [""];
   }
 
-  async function gerarParecerPdf(ctx) {
+  function makeDrawer(pdf, fonts, opts) {
+    const { font, fontBold } = fonts;
     const { PDFDocument, rgb } = global.PDFLib;
-    const pdf = await PDFDocument.create();
-    const { font, fontBold } = await loadFonts(pdf);
-    const brasao = await loadBrasao(pdf);
     const W = 595.28;
     const H = 841.89;
-    const margin = 48;
+    const margin = opts && opts.margin != null ? opts.margin : 48;
     const maxW = W - margin * 2;
     const black = rgb(0.08, 0.08, 0.08);
-    const green = rgb(0, 0.5, 0.22);
 
     let page = pdf.addPage([W, H]);
     let y = H - 36;
@@ -82,23 +82,6 @@
     }
     function ensure(h) {
       if (y - h < margin) newPage();
-    }
-    function text(str, opts) {
-      const size = opts.size || 10;
-      const f = opts.bold ? fontBold : font;
-      const color = opts.color || black;
-      const align = opts.align || "left";
-      const lines = wrap(str, f, size, opts.maxW || maxW);
-      const lh = opts.lh || size + 4;
-      for (const ln of lines) {
-        ensure(lh);
-        let x = margin;
-        if (align === "center") {
-          x = (W - f.widthOfTextAtSize(ln, size)) / 2;
-        }
-        page.drawText(ln, { x, y: y - size, size, font: f, color });
-        y -= lh;
-      }
     }
     function gap(n) {
       y -= n || 8;
@@ -113,21 +96,115 @@
       });
       y -= 12;
     }
+    function text(str, o) {
+      o = o || {};
+      const size = o.size || 10;
+      const f = o.bold ? fontBold : font;
+      const color = o.color || black;
+      const align = o.align || "left";
+      const lines = wrap(str, f, size, o.maxW || maxW);
+      const lh = o.lh || size + 4;
+      for (const ln of lines) {
+        ensure(lh);
+        let x = margin;
+        if (align === "center") {
+          x = (W - f.widthOfTextAtSize(ln, size)) / 2;
+        }
+        page.drawText(ln, { x, y: y - size, size, font: f, color });
+        y -= lh;
+      }
+    }
+    /** Rótulo normal + valor em negrito (respostas em destaque). */
+    function kv(label, value, o) {
+      o = o || {};
+      const size = o.size || 10;
+      const lh = o.lh || size + 4;
+      const lab = String(label || "");
+      const val = String(value == null || value === "" ? "—" : value);
+      const labW = font.widthOfTextAtSize(lab, size);
+      const avail = maxW - labW - 2;
+      if (avail < 40) {
+        text(lab, { size, bold: false });
+        text(val, { size, bold: true, lh });
+        return;
+      }
+      const valLines = wrap(val, fontBold, size, avail);
+      ensure(lh * valLines.length);
+      page.drawText(lab, {
+        x: margin,
+        y: y - size,
+        size,
+        font,
+        color: black,
+      });
+      page.drawText(valLines[0], {
+        x: margin + labW,
+        y: y - size,
+        size,
+        font: fontBold,
+        color: black,
+      });
+      y -= lh;
+      for (let i = 1; i < valLines.length; i++) {
+        ensure(lh);
+        page.drawText(valLines[i], {
+          x: margin + labW,
+          y: y - size,
+          size,
+          font: fontBold,
+          color: black,
+        });
+        y -= lh;
+      }
+    }
+
+    return {
+      W,
+      H,
+      margin,
+      maxW,
+      black,
+      page: () => page,
+      y: () => y,
+      setY: (v) => {
+        y = v;
+      },
+      newPage,
+      ensure,
+      gap,
+      line,
+      text,
+      kv,
+      font,
+      fontBold,
+      rgb,
+    };
+  }
+
+  async function gerarParecerPdf(ctx) {
+    const { PDFDocument, rgb } = global.PDFLib;
+    const pdf = await PDFDocument.create();
+    const fonts = await loadFonts(pdf);
+    const brasao = await loadBrasao(pdf);
+    const d = makeDrawer(pdf, fonts);
+    const { text, kv, gap, line, ensure } = d;
 
     const proc = ctx.numeroProcesso || "23205.XXXXXX/20XX-XX";
-    const unidadeNome = ctx.comissao?.nome || "—";
+    const unidadeNome = (ctx.comissao && ctx.comissao.nome) || "—";
+    const fav = !!(ctx.avaliacao && ctx.avaliacao.favoravel);
 
-    // Cabeçalho: brasão + textos centralizados
     if (brasao) {
       const bw = 72;
       const bh = (brasao.height / brasao.width) * bw;
+      d.ensure(bh + 14);
+      const page = d.page();
       page.drawImage(brasao, {
-        x: (W - bw) / 2,
-        y: y - bh,
+        x: (d.W - bw) / 2,
+        y: d.y() - bh,
         width: bw,
         height: bh,
       });
-      y -= bh + 14;
+      d.setY(d.y() - bh - 14);
     } else {
       gap(8);
     }
@@ -138,12 +215,7 @@
       align: "center",
       lh: 15,
     });
-    text(unidadeNome, {
-      size: 11,
-      bold: true,
-      align: "center",
-      lh: 15,
-    });
+    text(unidadeNome, { size: 11, bold: true, align: "center", lh: 15 });
     gap(8);
     text(
       "Parecer sobre Requerimento de Reconhecimento de Saberes e Competências",
@@ -161,18 +233,31 @@
 
     text("1. Identificação", { size: 12, bold: true });
     gap(4);
-    const idLines = [
-      `Servidor: ${ctx.req.nome || "—"}`,
-      `Matrícula SIAPE: ${ctx.req.siape || "—"}`,
-      `Cargo: ${ctx.req.cargo || "—"}`,
-      `Lotação: ${ctx.req.lotacao || "—"}`,
-      `Data de início do exercício no cargo atual: ${ctx.req.dataIngresso || "—"}`,
-      `Nível de RSC requerido: ${ctx.avaliacao.nivel?.nome || ctx.req.nivelRsc || "—"}`,
-      `Percentual correspondente: ${ctx.avaliacao.percentual != null ? ctx.avaliacao.percentual + "%" : "—"}`,
-      `Data do requerimento: ${ctx.dataRequerimento || "—"}`,
-      `Se enquadra nos requisitos legais de prioridade: ${ctx.prioridade ? "[X] Sim  [ ] Não" : "[ ] Sim  [X] Não"}`,
-    ];
-    idLines.forEach((l) => text(l, { size: 10 }));
+    kv("Servidor: ", (ctx.req && ctx.req.nome) || "—");
+    kv("Matrícula SIAPE: ", (ctx.req && ctx.req.siape) || "—");
+    kv("Cargo: ", (ctx.req && ctx.req.cargo) || "—");
+    kv("Lotação: ", (ctx.req && ctx.req.lotacao) || "—");
+    kv(
+      "Data de início do exercício no cargo atual: ",
+      (ctx.req && ctx.req.dataIngresso) || "—"
+    );
+    kv(
+      "Nível de RSC requerido: ",
+      (ctx.avaliacao && ctx.avaliacao.nivel && ctx.avaliacao.nivel.nome) ||
+        (ctx.req && ctx.req.nivelRsc) ||
+        "—"
+    );
+    kv(
+      "Percentual correspondente: ",
+      ctx.avaliacao && ctx.avaliacao.percentual != null
+        ? ctx.avaliacao.percentual + "%"
+        : "—"
+    );
+    kv("Data do requerimento: ", ctx.dataRequerimento || "—");
+    kv(
+      "Se enquadra nos requisitos legais de prioridade: ",
+      ctx.prioridade ? "Sim" : "Não"
+    );
     gap(10);
 
     text("2. Análise da Comissão", { size: 12, bold: true });
@@ -182,75 +267,166 @@
       { size: 10, lh: 13 }
     );
     gap(6);
-    text(`Pontuação mínima exigida: ${ctx.avaliacao.minPontos ?? "—"}`, { size: 10 });
-    text(`Pontuação obtida: ${ctx.avaliacao.pontosObtidos ?? "—"}`, { size: 10 });
-    text(`Quantidade mínima de critérios exigida: ${ctx.avaliacao.minItens ?? "—"}`, { size: 10 });
-    text(`Quantidade de critérios comprovados: ${ctx.avaliacao.qtdCriterios ?? "—"}`, { size: 10 });
-    text(
-      `Saldo de pontuação para novos pedidos: ${ctx.avaliacao.saldoPontuacao ?? "—"}`,
-      { size: 10 }
+    kv(
+      "Pontuação mínima exigida: ",
+      ctx.avaliacao && ctx.avaliacao.minPontos != null
+        ? String(ctx.avaliacao.minPontos)
+        : "—"
     );
-    text(
-      `Houve diligências: ${ctx.diligencias ? "[X] Sim   [ ] Não" : "[ ] Sim   [X] Não"}`,
-      { size: 10 }
+    kv(
+      "Pontuação obtida: ",
+      ctx.avaliacao && ctx.avaliacao.pontosObtidos != null
+        ? String(ctx.avaliacao.pontosObtidos)
+        : "—"
     );
+    kv(
+      "Quantidade mínima de critérios exigida: ",
+      ctx.avaliacao && ctx.avaliacao.minItens != null
+        ? String(ctx.avaliacao.minItens)
+        : "—"
+    );
+    kv(
+      "Quantidade de critérios comprovados: ",
+      ctx.avaliacao && ctx.avaliacao.qtdCriterios != null
+        ? String(ctx.avaliacao.qtdCriterios)
+        : "—"
+    );
+    kv(
+      "Saldo de pontuação para novos pedidos: ",
+      ctx.avaliacao && ctx.avaliacao.saldoPontuacao != null
+        ? String(ctx.avaliacao.saldoPontuacao)
+        : "—"
+    );
+    kv("Houve diligências: ", ctx.diligencias ? "Sim" : "Não");
     if (ctx.diligencias) {
-      text(
-        `Data de envio da diligência ao servidor: ${ctx.dataEnvioDiligencia || "____/____/________"}`,
-        { size: 10 }
+      kv(
+        "Data de envio da diligência ao servidor: ",
+        ctx.dataEnvioDiligencia || "____/____/________"
       );
-      text(
-        `Data de retorno do processo à comissão: ${ctx.dataRetornoDiligencia || "____/____/________"}`,
-        { size: 10 }
+      kv(
+        "Data de retorno do processo à comissão: ",
+        ctx.dataRetornoDiligencia || "____/____/________"
       );
     }
     if (ctx.complexidadeDesc) {
-      text(`Requisito de complexidade: ${ctx.complexidadeDesc} — ${ctx.avaliacao.complexidadeOk ? "atendido" : "não atendido"}`, { size: 10 });
+      kv(
+        "Requisito de complexidade: ",
+        ctx.complexidadeDesc +
+          " — " +
+          (ctx.avaliacao && ctx.avaliacao.complexidadeOk
+            ? "atendido"
+            : "não atendido")
+      );
     }
     gap(10);
 
     text("3. Parecer CRSC", { size: 12, bold: true });
     gap(4);
-    const fav = !!ctx.avaliacao.favoravel;
-    text(
-      `Parecer: ${fav ? "[X] Favorável  [ ] Não Favorável" : "[ ] Favorável  [X] Não Favorável"}`,
-      { size: 10, bold: true }
-    );
+    kv("Parecer: ", fav ? "Favorável" : "Não Favorável");
     gap(4);
     if (!fav) {
       text("Justificativa (caso Não Favorável):", { size: 10, bold: true });
-      const just = ctx.justificativa || "—";
-      text(just, { size: 10, lh: 13 });
+      text(ctx.justificativa || "—", { size: 10, lh: 13 });
       gap(6);
       if (ctx.hipotesesArt14 && ctx.hipotesesArt14.length) {
-        text(
-          "Incisos do art. 14 aplicados: " + ctx.hipotesesArt14.join(", ") + ".",
-          { size: 9 }
-        );
+        kv("Incisos do art. 14 aplicados: ", ctx.hipotesesArt14.join(", "));
         gap(4);
       }
     } else {
-      text("Justificativa (caso Não Favorável): —", { size: 10 });
-      gap(4);
+      kv("Justificativa (caso Não Favorável): ", "—");
+      gap(2);
     }
-    text(
-      `Nível concedido: ${fav ? ctx.avaliacao.nivel?.nome || "—" : "Não concedido"}`,
-      { size: 10 }
+    kv(
+      "Nível concedido: ",
+      fav
+        ? (ctx.avaliacao && ctx.avaliacao.nivel && ctx.avaliacao.nivel.nome) ||
+            "—"
+        : "Não concedido"
     );
-    text(
-      `Percentual correspondente: ${fav && ctx.avaliacao.percentual != null ? ctx.avaliacao.percentual + "%" : "—"}`,
-      { size: 10 }
+    kv(
+      "Percentual correspondente: ",
+      fav && ctx.avaliacao && ctx.avaliacao.percentual != null
+        ? ctx.avaliacao.percentual + "%"
+        : "—"
     );
-    text(
-      `Vigência da Concessão a partir de: ${fav ? ctx.vigencia || "____/____/________" : "—"}`,
-      { size: 10 }
+    kv(
+      "Vigência da Concessão a partir de: ",
+      fav ? ctx.vigencia || "____/____/________" : "—"
     );
     gap(14);
 
-    text("4. Assinaturas da CRSC-PCCTAE", { size: 12, bold: true });
+    // Relatório auxiliar didático dos itens (após o parecer)
+    text("4. Relatório auxiliar da análise por critério", {
+      size: 12,
+      bold: true,
+    });
     gap(4);
     text(
-      `Unidade: ${ctx.comissao?.nome || "—"} | Designação: Portaria nº ${ctx.comissao?.portariaDesignacao || "—"}`,
+      "Este relatório é material de apoio à comissão. Resume, de forma didática, o que o(a) servidor(a) declarou, o que a comissão aceitou e eventuais ressalvas (observações ou diligências) por critério específico do catálogo RSC-PCCTAE.",
+      { size: 9, lh: 12 }
+    );
+    gap(8);
+
+    const rel = ctx.itensRelatorio || [];
+    if (!rel.length) {
+      text(
+        "Nenhum critério com quantidade, observação ou diligência para listar.",
+        { size: 10 }
+      );
+    } else {
+      // agrupar por grupo
+      const order = ["I", "II", "III", "IV", "V", "VI"];
+      order.forEach((g) => {
+        const items = rel.filter((it) => String(it.grupo) === g);
+        if (!items.length) return;
+        text(`Grupo ${g}`, { size: 11, bold: true });
+        gap(4);
+        items.forEach((it, idx) => {
+          ensure(70);
+          kv(
+            `${idx + 1}. Critério ${it.criterionId || "—"}: `,
+            (it.descricao || "—").slice(0, 180) +
+              ((it.descricao || "").length > 180 ? "…" : "")
+          );
+          text(
+            `Unidade de medida: ${it.unidade || "—"} · Pontos por unidade: ${
+              it.pontosUnitario != null ? it.pontosUnitario : "—"
+            }`,
+            { size: 9 }
+          );
+          kv("Quantidade declarada: ", String(it.qtdDeclarada ?? 0));
+          kv("Quantidade aceita pela comissão: ", String(it.qtdAceita ?? 0));
+          kv(
+            "Pontos aceitos (qtd aceita × pts/unid.): ",
+            String(it.pontosAceitos ?? 0)
+          );
+          if (it.observacao) {
+            kv("Observação da comissão: ", it.observacao);
+          }
+          if (it.diligencia) {
+            kv("Diligência registrada no item: ", it.diligencia);
+          }
+          gap(8);
+        });
+      });
+      const somaAceita = rel.reduce(
+        (s, it) => s + (Number(it.pontosAceitos) || 0),
+        0
+      );
+      gap(2);
+      kv(
+        "Total de pontos aceitos neste relatório: ",
+        String(Math.round(somaAceita * 10) / 10)
+      );
+    }
+    gap(14);
+
+    text("5. Assinaturas da CRSC-PCCTAE", { size: 12, bold: true });
+    gap(4);
+    text(
+      `Unidade: ${unidadeNome} | Designação: Portaria nº ${
+        (ctx.comissao && ctx.comissao.portariaDesignacao) || "—"
+      }`,
       { size: 9 }
     );
     gap(10);
@@ -268,7 +444,9 @@
 
     gap(8);
     text(
-      `Documento gerado em ${new Date().toLocaleString("pt-BR")} — ferramenta CRSC Parecer RSC-UFFS (teste). A deliberação formal permanece com a comissão.`,
+      `Documento gerado em ${new Date().toLocaleString(
+        "pt-BR"
+      )} — ferramenta CRSC Parecer RSC-UFFS (teste). A deliberação formal permanece com a comissão.`,
       { size: 8, color: rgb(0.4, 0.4, 0.4) }
     );
 
@@ -277,73 +455,36 @@
   }
 
   /**
-   * PDF de diligência: dados do processo, itens diligenciados, textos e assinaturas.
+   * PDF de diligência: data = dia da geração; sem data de retorno.
+   * Independente do checkbox "Houve diligências" (usado só no parecer final).
    */
   async function gerarDiligenciaPdf(ctx) {
     const { PDFDocument, rgb } = global.PDFLib;
     const pdf = await PDFDocument.create();
-    const { font, fontBold } = await loadFonts(pdf);
+    const fonts = await loadFonts(pdf);
     const brasao = await loadBrasao(pdf);
-    const W = 595.28;
-    const H = 841.89;
-    const margin = 48;
-    const maxW = W - margin * 2;
-    const black = rgb(0.08, 0.08, 0.08);
-
-    let page = pdf.addPage([W, H]);
-    let y = H - 36;
-
-    function newPage() {
-      page = pdf.addPage([W, H]);
-      y = H - margin;
-    }
-    function ensure(h) {
-      if (y - h < margin) newPage();
-    }
-    function text(str, opts) {
-      const size = (opts && opts.size) || 10;
-      const f = opts && opts.bold ? fontBold : font;
-      const color = (opts && opts.color) || black;
-      const align = (opts && opts.align) || "left";
-      const lines = wrap(str, f, size, (opts && opts.maxW) || maxW);
-      const lh = (opts && opts.lh) || size + 4;
-      for (const ln of lines) {
-        ensure(lh);
-        let x = margin;
-        if (align === "center") {
-          x = (W - f.widthOfTextAtSize(ln, size)) / 2;
-        }
-        page.drawText(ln, { x, y: y - size, size, font: f, color });
-        y -= lh;
-      }
-    }
-    function gap(n) {
-      y -= n || 8;
-    }
-    function line() {
-      ensure(10);
-      page.drawLine({
-        start: { x: margin, y },
-        end: { x: W - margin, y },
-        thickness: 0.6,
-        color: rgb(0.7, 0.7, 0.7),
-      });
-      y -= 12;
-    }
+    const d = makeDrawer(pdf, fonts);
+    const { text, kv, gap, line, ensure } = d;
 
     const proc = ctx.numeroProcesso || "—";
     const unidadeNome = (ctx.comissao && ctx.comissao.nome) || "—";
+    // data da diligência = informada pelo app (padrão: hoje)
+    const dataDil =
+      ctx.dataEnvioDiligencia ||
+      new Date().toLocaleDateString("pt-BR");
 
     if (brasao) {
       const bw = 72;
       const bh = (brasao.height / brasao.width) * bw;
+      d.ensure(bh + 14);
+      const page = d.page();
       page.drawImage(brasao, {
-        x: (W - bw) / 2,
-        y: y - bh,
+        x: (d.W - bw) / 2,
+        y: d.y() - bh,
         width: bw,
         height: bh,
       });
-      y -= bh + 14;
+      d.setY(d.y() - bh - 14);
     } else {
       gap(8);
     }
@@ -374,20 +515,13 @@
 
     text("1. Dados do processo e do(a) servidor(a)", { size: 12, bold: true });
     gap(4);
-    [
-      `Servidor(a): ${(ctx.req && ctx.req.nome) || "—"}`,
-      `Matrícula SIAPE: ${(ctx.req && ctx.req.siape) || "—"}`,
-      `Cargo: ${(ctx.req && ctx.req.cargo) || "—"}`,
-      `Lotação: ${(ctx.req && ctx.req.lotacao) || "—"}`,
-      `Nível de RSC requerido: ${(ctx.req && ctx.req.nivelRsc) || "—"}`,
-      `Data do requerimento: ${ctx.dataRequerimento || "—"}`,
-      `Data de envio da diligência ao servidor: ${
-        ctx.dataEnvioDiligencia || "____/____/________"
-      }`,
-      `Data de retorno do processo à comissão (se houver): ${
-        ctx.dataRetornoDiligencia || "____/____/________"
-      }`,
-    ].forEach((l) => text(l, { size: 10 }));
+    kv("Servidor(a): ", (ctx.req && ctx.req.nome) || "—");
+    kv("Matrícula SIAPE: ", (ctx.req && ctx.req.siape) || "—");
+    kv("Cargo: ", (ctx.req && ctx.req.cargo) || "—");
+    kv("Lotação: ", (ctx.req && ctx.req.lotacao) || "—");
+    kv("Nível de RSC requerido: ", (ctx.req && ctx.req.nivelRsc) || "—");
+    kv("Data do requerimento: ", ctx.dataRequerimento || "—");
+    kv("Data da diligência: ", dataDil);
     gap(12);
 
     text("2. Critérios objeto da diligência", { size: 12, bold: true });
@@ -405,7 +539,9 @@
       itens.forEach((it, i) => {
         ensure(90);
         text(
-          `${i + 1}) Critério ${it.criterionId || "—"} (Grupo ${it.grupo || "—"})`,
+          `${i + 1}) Critério ${it.criterionId || "—"} (Grupo ${
+            it.grupo || "—"
+          })`,
           { size: 10, bold: true }
         );
         text(it.descricao || "—", { size: 9, lh: 12 });
@@ -414,13 +550,11 @@
             it.pontosUnitario != null ? it.pontosUnitario : "—"
           } · Qtd declarada: ${
             it.qtdDeclarada != null ? it.qtdDeclarada : "—"
-          } · Qtd aceita (parcial): ${
-            it.qtdAceita != null ? it.qtdAceita : "—"
           }`,
           { size: 9 }
         );
         text("Diligência solicitada:", { size: 9, bold: true });
-        text(it.texto || "—", { size: 10, lh: 13 });
+        text(it.texto || "—", { size: 10, lh: 13, bold: true });
         gap(10);
       });
     }
