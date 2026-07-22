@@ -21,12 +21,43 @@
       .trim();
   }
 
+  /** Normaliza PDF impresso do HTML (espaços em e-mail, rótulos "Nome :", RSC - PCCTAE). */
+  function normalizeLine(s) {
+    let t = clean(s);
+    t = t.replace(/\bfi\s*le:\/\//gi, "file://");
+    t = t.replace(/\bRSC\s*-\s*PCCTAE\b/gi, "RSC-PCCTAE");
+    t = t.replace(/\bE\s*-\s*mail\b/gi, "E-mail");
+    t = t.replace(/\bPró\s*-\s*reitoria\b/gi, "Pró-reitoria");
+    t = t.replace(/\bCD\s*-\s*0/gi, "CD-0");
+    t = t.replace(/\bFG\s*-\s*0/gi, "FG-0");
+    // e-mail com espaços: ricardo . conceicao @ uffs . edu . br
+    t = t.replace(
+      /([a-z0-9._%+-]+(?:\s*\.\s*[a-z0-9._%+-]+)*)\s*@\s*([a-z0-9.-]+(?:\s*\.\s*[a-z0-9.-]+)+)/gi,
+      (_, u, d) => u.replace(/\s+/g, "") + "@" + d.replace(/\s+/g, "")
+    );
+    // "Nome : valor" -> "Nome: valor"
+    t = t.replace(
+      /^(Nome|SIAPE|Cargo|Data de ingresso(?: em IFE)?|Lota[cç][aã]o|E-mail|Fun[cç][aã]o[^:]*)\s*:\s*/i,
+      (_, lab) => lab.replace(/\s+/g, " ").trim() + ": "
+    );
+    t = t.replace(/\s*:\s*/g, (m, offset, str) => {
+      // keep single colon spacing only for mid-line labels already handled
+      return m;
+    });
+    t = t.replace(/:\s+/g, ": ");
+    return clean(t);
+  }
+
   function isNoiseLine(ln) {
     const s = clean(ln);
     if (!s) return true;
     if (/^\d+\s+of\s+\d+/i.test(s)) return true;
+    if (/\d+\/\d+$/i.test(s) && /file:/i.test(s)) return true;
     if (/^file:\/\//i.test(s)) return true;
-    if (/Requerimento de RSC/i.test(s) && /file:/i.test(s)) return true;
+    if (/Requerimento de RSC/i.test(s) && (/file:/i.test(s) || /^\d{2}\/\d{2}\/\d{4}/.test(s)))
+      return true;
+    if (/Organize os itens de acordo/i.test(s)) return true;
+    if (/conforme os requisitos do art/i.test(s)) return true;
     if (/^MINIST[EÉ]RIO DA EDUCA/i.test(s)) return true;
     if (/^UNIVERSIDADE FEDERAL/i.test(s)) return true;
     if (/^PR[OÓ]-REITORIA/i.test(s)) return true;
@@ -59,10 +90,7 @@
 
   async function extractPdfLines(fileOrArrayBuffer) {
     if (!global.pdfjsLib) throw new Error("pdf.js não carregado");
-    const data =
-      fileOrArrayBuffer instanceof ArrayBuffer
-        ? fileOrArrayBuffer
-        : await fileOrArrayBuffer.arrayBuffer();
+    const data = await toArrayBuffer(fileOrArrayBuffer);
     const pdf = await global.pdfjsLib.getDocument({ data }).promise;
     const allLines = [];
     const allItems = [];
@@ -136,8 +164,12 @@
   const ITEM_START =
     /Coordena|Participa|Exerc[ií]cio|Elabora|Atua|Apresenta|Recebimento|Produ|Autoria|Conclus|Desempenho|Publica|Avalia|Representa|Carta patente|Coopera/i;
 
-  const SCORE_TAIL =
-    /(Por\s+(?:designa[cç][aã]o|projeto|produto|evento|sistema|curso|publica[cç][aã]o|patente|capacita[cç][aã]o|mandato|ano ou fra[cç][aã]o(?:\s+acima de seis meses)?))\s+(\d{1,3}[.,]\d)\s+(\d{1,3}[.,]\d)/gi;
+  const UNIT =
+    "Por\\s+(?:designa[cç][aã]o|projeto|produto|evento|sistema|curso|publica[cç][aã]o|patente|capacita[cç][aã]o|mandato|ano ou fra[cç][aã]o(?:\\s+acima de seis meses)?)";
+  const SCORE_TAIL = new RegExp(
+    "(" + UNIT + ")\\s+(\\d{1,3}[.,]\\d)\\s+(\\d{1,3}[.,]\\d)",
+    "gi"
+  );
 
   function pushItem(itens, seen, n, desc, unidade, pu, po) {
     desc = clean(desc);
@@ -203,8 +235,12 @@
       let m;
       let found = 0;
       // global: vários itens na mesma string
-      const re =
-        /(\d{1,2})?\s*((?:Coordena|Participa|Exerc[ií]cio|Elabora|Atua|Apresenta|Recebimento|Produ|Autoria|Conclus|Desempenho|Publica|Avalia|Representa|Carta patente|Coopera)[\s\S]*?)\s+(Por\s+(?:designa[cç][aã]o|projeto|produto|evento|sistema|curso|publica[cç][aã]o|patente|capacita[cç][aã]o|mandato|ano ou fra[cç][aã]o(?:\s+acima de seis meses)?))\s+(\d{1,3}[.,]\d)\s+(\d{1,3}[.,]\d)/gi;
+      const re = new RegExp(
+        "(\\d{1,2})?\\s*((?:Coordena|Participa|Exerc[ií]cio|Elabora|Atua|Apresenta|Recebimento|Produ|Autoria|Conclus|Desempenho|Publica|Avalia|Representa|Carta patente|Coopera)[\\s\\S]*?)\\s+(" +
+          UNIT +
+          ")\\s+(\\d{1,3}[.,]\\d)\\s+(\\d{1,3}[.,]\\d)",
+        "gi"
+      );
       while ((m = re.exec(t)) !== null) {
         found++;
         const n = m[1] ? Number(m[1]) : defaultN || found;
@@ -336,16 +372,30 @@
       email: "",
     };
 
-    // Preferir linhas com rótulos
-    for (const ln of lines) {
+    // Preferir linhas com rótulos ("Nome:" ou "Nome :")
+    for (const raw of lines) {
+      const ln = normalizeLine(raw);
       let m;
       if ((m = ln.match(/^Nome:\s*(.+)$/i))) out.nome = clean(m[1]);
-      else if ((m = ln.match(/^SIAPE:\s*(\d{5,8})\s*$/i))) out.siape = m[1];
+      else if ((m = ln.match(/^SIAPE:\s*(\d{5,8})/i))) out.siape = m[1];
       else if ((m = ln.match(/^Cargo:\s*(.+)$/i))) out.cargo = clean(m[1]);
-      else if ((m = ln.match(/^Data de ingresso(?: em IFE)?:\s*(\d{2}\/\d{2}\/\d{4})/i)))
+      else if (
+        (m = ln.match(
+          /^Data de ingresso(?: em IFE)?:\s*(\d{2}\/\d{2}\/\d{4})/i
+        ))
+      )
         out.dataIngresso = m[1];
       else if ((m = ln.match(/^Lota[cç][aã]o:\s*(.+)$/i))) out.lotacao = clean(m[1]);
-      else if ((m = ln.match(/^E-?mail:\s*(.+)$/i))) out.email = clean(m[1]);
+      else if ((m = ln.match(/^E-?mail:\s*(.+)$/i))) {
+        out.email = clean(m[1]).replace(/\s+/g, "");
+      } else if ((m = ln.match(/([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i))) {
+        if (!out.email) out.email = m[1];
+      }
+      // Função/Encargo
+      else if ((m = ln.match(/^Fun[cç][aã]o[^:]*:\s*(.+)$/i))) {
+        // opcional — não bloqueia
+        out.funcao = clean(m[1]);
+      }
     }
 
     // Layout calculadora: valores em linhas isoladas após o título
@@ -416,29 +466,34 @@
   }
 
   function parseTotais(lines, flat) {
-    const text = flat || lines.join(" ");
+    const text = clean(flat || lines.join(" "));
     const pontMin = parseNumberBR(
-      (text.match(/Pontua[cç][aã]o m[ií]nima necess[aá]ria:\s*([\d.,]+)/i) ||
-        text.match(/m[ií]nima necess[aá]ria[:\s]+([\d.,]+)/i) ||
+      (text.match(
+        /Pontua[cç][aã]o m[ií]nima necess[aá]ria\s*:\s*([\d.,]+)/i
+      ) ||
+        text.match(/m[ií]nima necess[aá]ria\s*[:\s]+([\d.,]+)/i) ||
         [])[1]
     );
     const pontTotal = parseNumberBR(
-      (text.match(/Pontua[cç][aã]o total apresentada:\s*([\d.,]+)/i) ||
+      (text.match(
+        /Pontua[cç][aã]o total apresentada\s*:\s*([\d.,]+)/i
+      ) ||
         text.match(/totalizo\s+([\d.,]+)\s*pontos/i) ||
         text.match(/=\s*([\d.,]+)\s*pontos/i) ||
         [])[1]
     );
     const qtd = parseNumberBR(
       (text.match(
-        /Quantidade de crit[eé]rios espec[ií]ficos utilizados:\s*([\d.,]+)/i
+        /Quantidade de crit[eé]rios espec[ií]ficos utilizados\s*:\s*([\d.,]+)/i
       ) || [])[1]
     );
     const excedente = parseNumberBR(
-      (text.match(/excedente[^0-9]{0,40}([\d.,]+)/i) || [])[1]
+      (text.match(/excedente[^0-9]{0,50}([\d.,]+)/i) || [])[1]
     );
     const saldoAnterior = parseNumberBR(
-      (text.match(/Saldo de pontua[cç][aã]o de concess[aã]o anterior:\s*([\d.,]+)/i) ||
-        [])[1]
+      (text.match(
+        /Saldo de pontua[cç][aã]o de concess[aã]o anterior\s*:\s*([\d.,]+)/i
+      ) || [])[1]
     );
     return { pontMin, pontTotal, qtd, excedente, saldoAnterior };
   }
@@ -464,7 +519,7 @@
     );
     if (m) return m[1].toUpperCase();
 
-    // lista com X antes (às vezes "X RSC-PCCTAE V")
+    // lista com X na mesma linha ou na linha anterior (layout impresso HTML)
     const niveis = ["VI", "V", "IV", "III", "II", "I"];
     for (const n of niveis) {
       const re = new RegExp(
@@ -477,6 +532,24 @@
       );
       if (re.test(text)) return n;
     }
+    // linhas: "X" isolado seguido de "RSC-PCCTAE VI"
+    for (let i = 0; i < lines.length - 1; i++) {
+      const a = normalizeLine(lines[i]);
+      const b = normalizeLine(lines[i + 1]);
+      if (/^x$/i.test(a) || /^\[\s*x\s*\]$/i.test(a)) {
+        const nm = b.match(/^RSC-PCCTAE\s*(I{1,3}|IV|V|VI)\b/i);
+        if (nm) return nm[1].toUpperCase();
+      }
+      const same = a.match(
+        /^x\s+RSC-PCCTAE\s*(I{1,3}|IV|V|VI)\b/i
+      );
+      if (same) return same[1].toUpperCase();
+    }
+    // "Nível de RSC pretendido: ... X RSC-PCCTAE VI"
+    m = text.match(
+      /N[ií]vel de RSC pretendido[\s\S]{0,200}?\bX\s+RSC-PCCTAE\s*(I{1,3}|IV|V|VI)\b/i
+    );
+    if (m) return m[1].toUpperCase();
 
     // por pontuação mínima declarada
     const minMap = {
@@ -532,9 +605,10 @@
   }
 
   function parseRequerimentoFromLines(lines, rawJoin) {
-    const flat = clean(lines.join(" ") + " " + (rawJoin || ""));
-    const header = parseHeaderFromLines(lines);
-    const itens = parseItensFromLines(lines);
+    const normLines = (lines || []).map(normalizeLine).filter(Boolean);
+    const flat = clean(normLines.join(" ") + " " + normalizeLine(rawJoin || ""));
+    const header = parseHeaderFromLines(normLines);
+    const itens = parseItensFromLines(normLines);
     // totais: tenta linhas + rawJoin (números às vezes só no stream bruto)
     const totais = parseTotais(lines, flat);
     if (totais.pontMin == null && rawJoin) {
@@ -603,10 +677,39 @@
     return parseRequerimentoFromLines(synthetic);
   }
 
+  async function toArrayBuffer(file) {
+    if (!file) throw new Error("Arquivo PDF não informado");
+    if (file instanceof ArrayBuffer) {
+      if (!file.byteLength) throw new Error("PDF vazio (ArrayBuffer 0 bytes)");
+      return file;
+    }
+    if (ArrayBuffer.isView(file)) {
+      const v = file;
+      return v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength);
+    }
+    if (typeof file.arrayBuffer === "function") {
+      const ab = await file.arrayBuffer();
+      if (!ab || !ab.byteLength) {
+        // fallback: FileReader
+        const ab2 = await new Promise((resolve, reject) => {
+          const fr = new FileReader();
+          fr.onload = () => resolve(fr.result);
+          fr.onerror = () => reject(fr.error || new Error("FileReader falhou"));
+          fr.readAsArrayBuffer(file);
+        });
+        if (!ab2 || !ab2.byteLength) throw new Error("PDF vazio ou ilegível");
+        return ab2;
+      }
+      return ab;
+    }
+    throw new Error("Tipo de arquivo PDF não suportado");
+  }
+
   async function parseRequerimentoPdf(file) {
-    const { lines, rawJoin, numPages } = await extractPdfLines(file);
+    const ab = await toArrayBuffer(file);
+    const { lines, rawJoin, numPages } = await extractPdfLines(ab);
     const data = parseRequerimentoFromLines(lines, rawJoin);
-    data._sourceName = file.name || "requerimento.pdf";
+    data._sourceName = (file && file.name) || "requerimento.pdf";
     data._lineCount = lines.length;
     data._numPages = numPages;
     data._linesSample = lines.slice(0, 40);

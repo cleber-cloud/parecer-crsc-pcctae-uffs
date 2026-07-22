@@ -3,3 +3,6 @@ _dbg*.json
 _t.js
 _smoke.js
 
+
+_*.pdf
+
