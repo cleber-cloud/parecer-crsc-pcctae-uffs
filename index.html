@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CRSC Parecer RSC-PCCTAE | UFFS</title>
+  <meta name="description" content="Ferramenta auxiliar da CRSC-PCCTAE para checklist e emissão de parecer." />
+  <link rel="icon" href="./favicon.ico" />
+  <link rel="stylesheet" href="./css/uffs-layout.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="wrap">
+      <div style="display:flex;align-items:center;gap:1rem">
+        <img src="./logo-ufes.png" alt="Logo" />
+        <div>
+          <h1>CRSC · Parecer RSC-PCCTAE</h1>
+          <p>Comissão de Reconhecimento de Saberes e Competências · UFFS</p>
+        </div>
+      </div>
+      <div class="badge" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.25)">Versão teste · GitHub Pages</div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <div class="badge">Ferramenta auxiliar da comissão</div>
+      <h2>Avaliar requerimento e emitir <span>parecer</span></h2>
+      <p class="muted" style="max-width:40rem;margin:0">
+        Carregue o PDF do Requerimento gerado pela
+        <a href="https://calculadora-rsc.uffs.edu.br/" target="_blank" rel="noopener">calculadora RSC</a>,
+        confira o checklist, escolha a CRSC do campus/Reitoria e gere o parecer em PDF.
+        Base: Decreto nº 13.048/2026, IN PROGESP nº 9/2026 e Regimento (Portaria 4725/GR/UFFS/2026).
+      </p>
+    </section>
+
+    <div id="toast" class="alert alert-info hidden" role="status"></div>
+
+    <section class="card" id="step1">
+      <h3>1. Processo e unidade da CRSC</h3>
+      <div class="grid-2">
+        <div>
+          <label for="numProcesso">Número do processo SIPAC *</label>
+          <input id="numProcesso" type="text" placeholder="23205.XXXXXX/20XX-XX" />
+        </div>
+        <div>
+          <label for="selUnidade">Campus / Reitoria da CRSC *</label>
+          <select id="selUnidade"></select>
+          <p id="comissaoInfo" class="muted small" style="margin:.4rem 0 0"></p>
+        </div>
+        <div>
+          <label for="dataReq">Data do requerimento</label>
+          <input id="dataReq" type="date" />
+        </div>
+        <div>
+          <label for="anexoNum">Nº do anexo do parecer</label>
+          <input id="anexoNum" type="text" value="I" placeholder="I, II, III…" />
+        </div>
+        <div>
+          <label for="vigencia">Vigência da concessão (se favorável)</label>
+          <input id="vigencia" type="date" />
+        </div>
+        <div style="display:flex;flex-direction:column;gap:.6rem;justify-content:flex-end">
+          <label class="signer" style="margin:0"><input id="chkPrioridade" type="checkbox" /> Prioridade legal (idoso, deficiência, doença grave etc.)</label>
+          <label class="signer" style="margin:0"><input id="chkDiligencias" type="checkbox" /> Houve diligências</label>
+        </div>
+      </div>
+      <div id="impedimentoAlert" class="alert alert-warn hidden" style="margin-top:1rem"></div>
+      <div style="margin-top:1rem">
+        <label>Assinantes titulares (desmarque se ausente / impedido)</label>
+        <div id="signers" class="signers"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>2. PDF do Requerimento</h3>
+      <div class="file-drop" id="fileDrop">
+        <p><strong>Arraste o PDF</strong> ou clique para selecionar</p>
+        <p class="muted small">Arquivo gerado pela calculadora RSC-PCCTAE UFFS</p>
+        <p id="fileName" class="small" style="margin-top:.5rem"></p>
+        <input id="fileInput" type="file" accept="application/pdf,.pdf" class="hidden" />
+      </div>
+      <div id="identBox" class="hidden" style="margin-top:1rem"></div>
+    </section>
+
+    <section class="card hidden" id="step2">
+      <h3>3. Checklist de critérios</h3>
+      <p class="muted small">Marque o que a comissão considera comprovado. A prévia recalcula pontos e hipóteses de indeferimento.</p>
+      <div class="btn-row" style="margin-top:0">
+        <button type="button" class="btn btn-secondary" id="btnAllOk">Marcar todos comprovados</button>
+        <button type="button" class="btn btn-secondary" id="btnAllNo">Marcar todos não comprovados</button>
+      </div>
+      <div class="table-wrap" style="margin-top:1rem">
+        <table class="checklist">
+          <thead>
+            <tr>
+              <th>Grupo</th>
+              <th>Critério específico</th>
+              <th>Unidade</th>
+              <th>Pts</th>
+              <th>Status</th>
+              <th>Obs.</th>
+            </tr>
+          </thead>
+          <tbody id="checklistBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card hidden" id="step3">
+      <h3>4. Análise e parecer</h3>
+      <div id="metricsBox" class="metrics"></div>
+      <div id="hipotesesBox" class="alert alert-info hidden" style="margin-top:1rem"></div>
+      <div style="margin-top:1rem">
+        <label for="justificativa">Justificativa (obrigatória se não favorável — pode editar)</label>
+        <textarea id="justificativa" placeholder="Preenchida automaticamente com hipóteses do decreto; edite se necessário."></textarea>
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-primary" id="btnParecer" disabled>Gerar parecer PDF</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <div class="wrap">
+      <p style="margin:0;font-weight:700">UFFS · CRSC-PCCTAE · ferramenta de apoio (teste)</p>
+      <p style="margin:.4rem 0 0;font-size:.85rem;opacity:.95">
+        Não substitui deliberação formal da comissão. Dados processados localmente no navegador (GitHub Pages).
+      </p>
+    </div>
+  </footer>
+
+  <script src="./vendor/pdf.min.js"></script>
+  <script>
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.js";
+    }
+  </script>
+  <script src="./vendor/pdf-lib.min.js"></script>
+  <script src="./vendor/fontkit.umd.min.js"></script>
+  <script src="./js/comissoes-data.js"></script>
+  <script src="./js/comissoes.js"></script>
+  <script src="./js/regras-rsc.js"></script>
+  <script src="./js/parse-requerimento.js"></script>
+  <script src="./js/parecer-pdf.js"></script>
+  <script src="./js/app.js"></script>
+</body>
+</html>
