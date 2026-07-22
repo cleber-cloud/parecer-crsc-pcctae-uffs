@@ -61,6 +61,19 @@
           <label class="signer" style="margin:0"><input id="chkDiligencias" type="checkbox" /> Houve diligências</label>
         </div>
       </div>
+      <div id="diligenciaDatas" class="diligencia-datas hidden">
+        <p class="muted small" style="margin:0 0 .65rem">Informe as datas do trâmite de diligência no processo.</p>
+        <div class="grid-2">
+          <div>
+            <label for="dataEnvioDil">Data de envio da diligência ao servidor *</label>
+            <input id="dataEnvioDil" type="date" />
+          </div>
+          <div>
+            <label for="dataRetornoDil">Data de retorno do processo à comissão *</label>
+            <input id="dataRetornoDil" type="date" />
+          </div>
+        </div>
+      </div>
       <div id="impedimentoAlert" class="alert alert-warn hidden" style="margin-top:1rem"></div>
       <div style="margin-top:1rem">
         <label>Assinantes da CRSC (titular e suplente por segmento)</label>
@@ -98,23 +111,9 @@
         <button type="button" class="btn btn-secondary" id="btnAllOk">Aceitar todas as quantidades</button>
         <button type="button" class="btn btn-secondary" id="btnAllNo">Zerar todas as quantidades</button>
       </div>
-      <div class="table-wrap" style="margin-top:1rem">
-        <table class="checklist" id="checklistTable">
-          <thead>
-            <tr>
-              <th>Grupo</th>
-              <th>ID</th>
-              <th>Critério específico</th>
-              <th>Unidade de medida</th>
-              <th>Pts/unid.</th>
-              <th>Qtd decl.</th>
-              <th>Qtd aceita</th>
-              <th>Pts aceitos</th>
-              <th>Obs.</th>
-            </tr>
-          </thead>
-          <tbody id="checklistBody"></tbody>
-        </table>
+      <div id="checklistBody" class="checklist-groups" style="margin-top:1rem"></div>
+      <div class="btn-row" style="margin-top:1.25rem">
+        <button type="button" class="btn btn-secondary" id="btnGerarDiligencia" disabled>Gerar diligência (PDF)</button>
       </div>
     </section>
 

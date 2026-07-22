@@ -11,13 +11,96 @@
     dataRequerimento: "",
     prioridade: false,
     diligencias: false,
+    dataEnvioDiligencia: "",
+    dataRetornoDiligencia: "",
     vigencia: "",
     hipotesesSelecionadas: [],
     /** @type {Record<string, boolean>} chave siape → marcado */
     signerChecked: {},
     /** ocultar linhas com qtdDeclarada === 0 */
     hideZeroCriterios: true,
+    /** campos cuja discórdia texto×OCR o usuário já confirmou/editou */
+    confirmedFields: {},
+    /** índice do item com caixa de diligência aberta */
+    diligenciaOpenIdx: null,
   };
+
+  const IDENT_FIELDS = [
+    { key: "nome", label: "Servidor (nome)", type: "text" },
+    { key: "siape", label: "SIAPE", type: "text" },
+    { key: "cargo", label: "Cargo", type: "text" },
+    { key: "lotacao", label: "Lotação", type: "text" },
+    { key: "dataIngresso", label: "Data de ingresso", type: "text" },
+    { key: "email", label: "E-mail", type: "email" },
+    { key: "nivelRsc", label: "Nível RSC pedido", type: "nivel" },
+    {
+      key: "pontuacaoTotalDeclarada",
+      label: "Pontos declarados (total)",
+      type: "number",
+    },
+    {
+      key: "pontuacaoMinimaDeclarada",
+      label: "Pontuação mínima",
+      type: "number",
+    },
+    {
+      key: "qtdCriteriosDeclarada",
+      label: "Qtd. critérios declarada",
+      type: "number",
+    },
+  ];
+
+  function fieldNeedsConfirm(f) {
+    if (!f) return false;
+    const hasT = f.text != null && String(f.text).trim() !== "";
+    const hasO = f.ocr != null && String(f.ocr).trim() !== "";
+    if (hasT && hasO) return !f.agree || !!f.conflict;
+    // só uma fonte capturou: pede confirmação se o OCR realmente rodou
+    const dual = state.req && state.req._dualCapture;
+    const ocrRan =
+      dual &&
+      !dual.ocrFailed &&
+      ((dual.ocrLines || 0) > 0 || (dual.ocrConfidence || 0) > 0);
+    if (ocrRan && hasT !== hasO) return true;
+    return false;
+  }
+
+  function isFieldConfirmPending(key) {
+    if (state.confirmedFields[key]) return false;
+    const f = state.req && state.req._fields && state.req._fields[key];
+    return fieldNeedsConfirm(f);
+  }
+
+  function markFieldConfirmed(key) {
+    state.confirmedFields[key] = true;
+  }
+
+  function fmtDateBr(iso) {
+    if (!iso) return "";
+    const p = String(iso).split("-");
+    if (p.length === 3) return p[2] + "/" + p[1] + "/" + p[0];
+    return iso;
+  }
+
+  function syncDiligenciaDatasUI() {
+    const box = $("diligenciaDatas");
+    if (!box) return;
+    if (state.diligencias) box.classList.remove("hidden");
+    else box.classList.add("hidden");
+  }
+
+  function updateDiligenciaBtn() {
+    const btn = $("btnGerarDiligencia");
+    if (!btn) return;
+    const n = (state.req?.itens || []).filter(
+      (i) => i.diligencia && i.diligencia.texto
+    ).length;
+    btn.disabled = !state.req || n === 0;
+    btn.textContent =
+      n > 0
+        ? `Gerar diligência (PDF) · ${n} item(ns)`
+        : "Gerar diligência (PDF)";
+  }
 
   const $ = (id) => document.getElementById(id);
 
@@ -337,40 +420,123 @@
     const r = state.req;
     if (!r) return;
     $("identBox").classList.remove("hidden");
+
+    const fieldsHtml = IDENT_FIELDS.map((meta) => {
+      const key = meta.key;
+      const pending = isFieldConfirmPending(key);
+      const f = (r._fields && r._fields[key]) || null;
+      const val = r[key] != null ? r[key] : "";
+      const cls = "ident-field" + (pending ? " needs-confirm" : "");
+      const hint = pending
+        ? `<span class="confirm-hint">Confirme esta informação</span>`
+        : "";
+      let control = "";
+      if (meta.type === "nivel") {
+        control = `<select data-field="${key}" class="ident-inp" ${
+          pending ? "" : ""
+        }>
+          ${["I", "II", "III", "IV", "V", "VI"]
+            .map(
+              (n) =>
+                `<option value="${n}" ${
+                  String(val) === n ? "selected" : ""
+                }>RSC ${n}</option>`
+            )
+            .join("")}
+        </select>`;
+      } else {
+        const ro = pending ? "" : "readonly";
+        // campos com discórdia: sempre editáveis; concordantes: readonly mas clicáveis via focus? keep readonly when ok
+        control = `<input type="${
+          meta.type === "number" ? "number" : meta.type === "email" ? "email" : "text"
+        }" data-field="${key}" class="ident-inp" value="${esc(
+          val
+        )}" step="any" ${pending ? "" : ro} />`;
+      }
+      const dual =
+        f && (f.text != null || f.ocr != null)
+          ? `<span class="muted" style="font-size:.68rem">texto: ${esc(
+              f.text == null || f.text === "" ? "—" : f.text
+            )} · OCR: ${esc(
+              f.ocr == null || f.ocr === "" ? "—" : f.ocr
+            )}</span>`
+          : "";
+      return `<div class="${cls}" data-field-wrap="${key}">
+        <span class="k">${esc(meta.label)}</span>
+        ${control}
+        ${hint}
+        ${dual}
+      </div>`;
+    }).join("");
+
     $("identBox").innerHTML = `
-      <div class="metrics">
-        <div class="metric"><div class="k">Servidor</div><div class="v" style="font-size:1rem">${esc(r.nome)}</div></div>
-        <div class="metric"><div class="k">SIAPE</div><div class="v" style="font-size:1rem">${esc(r.siape)}</div></div>
-        <div class="metric"><div class="k">Nível pedido</div><div class="v" style="font-size:1rem">
-          <select id="nivelOverride" style="font-weight:800;font-size:1rem;padding:.2rem .4rem">
-            ${["I","II","III","IV","V","VI"].map((n) =>
-              `<option value="${n}" ${r.nivelRsc === n ? "selected" : ""}>RSC ${n}</option>`
-            ).join("")}
-          </select>
-        </div></div>
-        <div class="metric"><div class="k">Pontos (declarados)</div><div class="v" style="font-size:1rem">${r.pontuacaoTotalDeclarada ?? "—"}</div></div>
-      </div>
-      <p class="muted small" style="margin-top:.75rem">
-        <strong>Cargo:</strong> ${esc(r.cargo)} ·
-        <strong>Lotação:</strong> ${esc(r.lotacao)} ·
-        <strong>Ingresso:</strong> ${esc(r.dataIngresso)} ·
-        <strong>E-mail:</strong> ${esc(r.email)}
-      </p>`;
-    const sel = document.getElementById("nivelOverride");
-    if (sel) {
-      sel.addEventListener("change", () => {
-        state.req.nivelRsc = sel.value;
-        const nv = RSCRegras.NIVEIS[sel.value];
-        if (nv) {
-          state.req.pontuacaoMinimaDeclarada = nv.minPontos;
-          if (state.req.pontuacaoTotalDeclarada != null) {
-            state.req.excedenteDeclarado =
-              Math.round((state.req.pontuacaoTotalDeclarada - nv.minPontos) * 10) / 10;
+      <p class="muted small" style="margin:0 0 .65rem">
+        Campos em <strong style="color:#b45309">amarelo</strong> não tiveram concordância entre texto nativo e OCR — confirme ou corrija.
+      </p>
+      <div class="ident-form">${fieldsHtml}</div>`;
+
+    $("identBox").querySelectorAll(".ident-inp").forEach((el) => {
+      const apply = () => {
+        const key = el.getAttribute("data-field");
+        let v = el.value;
+        if (
+          key === "pontuacaoTotalDeclarada" ||
+          key === "pontuacaoMinimaDeclarada" ||
+          key === "qtdCriteriosDeclarada"
+        ) {
+          const n = Number(String(v).replace(",", "."));
+          v = Number.isFinite(n) ? n : null;
+        }
+        state.req[key] = v;
+        markFieldConfirmed(key);
+        if (key === "nivelRsc") {
+          const nv = RSCRegras.NIVEIS[v];
+          if (nv) {
+            state.req.pontuacaoMinimaDeclarada = nv.minPontos;
+            if (state.req.pontuacaoTotalDeclarada != null) {
+              state.req.excedenteDeclarado =
+                Math.round(
+                  (state.req.pontuacaoTotalDeclarada - nv.minPontos) * 10
+                ) / 10;
+            }
           }
         }
+        if (
+          key === "pontuacaoTotalDeclarada" ||
+          key === "pontuacaoMinimaDeclarada"
+        ) {
+          if (
+            state.req.pontuacaoTotalDeclarada != null &&
+            state.req.pontuacaoMinimaDeclarada != null
+          ) {
+            state.req.excedenteDeclarado =
+              Math.round(
+                (state.req.pontuacaoTotalDeclarada -
+                  state.req.pontuacaoMinimaDeclarada) *
+                  10
+              ) / 10;
+          }
+        }
+        if (r._fields && r._fields[key]) {
+          r._fields[key].value = v;
+          r._fields[key].agree = true;
+          r._fields[key].source = "user";
+          r._fields[key].conflict = false;
+        }
+        const wrap = $("identBox").querySelector(
+          `[data-field-wrap="${key}"]`
+        );
+        if (wrap) {
+          wrap.classList.remove("needs-confirm");
+          const hint = wrap.querySelector(".confirm-hint");
+          if (hint) hint.remove();
+          el.removeAttribute("readonly");
+        }
         updateAvaliacao();
-      });
-    }
+      };
+      el.addEventListener("change", apply);
+      el.addEventListener("blur", apply);
+    });
     renderCompare();
   }
 
@@ -390,14 +556,15 @@
   }
 
   function renderChecklist() {
+    const box = $("checklistBody");
+    box.innerHTML = "";
     const r = state.req;
-    const tbody = $("checklistBody");
-    tbody.innerHTML = "";
     const info = $("catalogInfo");
     if (!r || !r.itens || !r.itens.length) {
-      tbody.innerHTML =
-        '<tr><td colspan="9" class="muted">Nenhum critério no catálogo.</td></tr>';
+      box.innerHTML =
+        '<p class="muted">Nenhum critério no catálogo.</p>';
       if (info) info.textContent = "";
+      updateDiligenciaBtn();
       return;
     }
 
@@ -413,6 +580,8 @@
       ) / 10;
     if (info) {
       const un = (r._catalogUnmatched && r._catalogUnmatched.length) || 0;
+      const nDil = r.itens.filter((i) => i.diligencia && i.diligencia.texto)
+        .length;
       info.innerHTML =
         `Catálogo canônico: <strong>${r.itens.length}</strong> critérios · ` +
         `<strong>${comQtd}</strong> com quantidade declarada · ` +
@@ -420,80 +589,208 @@
         (r.pontuacaoTotalDeclarada != null
           ? ` (PDF: ${r.pontuacaoTotalDeclarada})`
           : "") +
+        (nDil ? ` · <strong>${nDil}</strong> em diligência` : "") +
         (un
           ? ` · <span style="color:#9a3412">${un} item(ns) do PDF sem casamento no catálogo</span>`
           : "");
     }
     syncHideZeroBtn();
 
-    r.itens.forEach((it, idx) => {
-      if (it.qtdDeclarada == null) it.qtdDeclarada = 0;
-      if (it.qtdAceita == null) it.qtdAceita = it.qtdDeclarada;
-      const qDecl = Number(it.qtdDeclarada) || 0;
-      if (state.hideZeroCriterios && qDecl <= 0) return;
+    const cats = (window.RSCCriterios && window.RSCCriterios.getCategorias()) ||
+      window.RSC_CATEGORIAS || {
+        I: "Grupo I",
+        II: "Grupo II",
+        III: "Grupo III",
+        IV: "Grupo IV",
+        V: "Grupo V",
+        VI: "Grupo VI",
+      };
+    const order = ["I", "II", "III", "IV", "V", "VI"];
+    let visible = 0;
 
-      const pts = pontosItem(it);
-      const tr = document.createElement("tr");
-      const st =
-        Number(it.qtdAceita) <= 0
-          ? qDecl > 0
-            ? "no"
-            : "zero"
-          : Number(it.qtdAceita) < qDecl
-            ? "pend"
-            : "ok";
-      tr.className = st;
-      if (qDecl <= 0) tr.classList.add("row-zero");
-      const idLabel = it.criterionId || "—";
-      tr.innerHTML = `
-        <td><strong>${esc(it.grupo || "—")}</strong></td>
-        <td class="num small" title="Identificador canônico">${esc(idLabel)}</td>
-        <td>${esc(it.descricao)}</td>
-        <td>${esc(it.unidade)}</td>
-        <td class="num">${it.pontosUnitario != null ? it.pontosUnitario : "—"}</td>
-        <td class="num">${qDecl}</td>
-        <td><input type="number" min="0" step="any" class="qtd-aceita" data-idx="${idx}" value="${
-          it.qtdAceita != null ? it.qtdAceita : 0
-        }" style="width:4.5rem"></td>
-        <td class="num pts-aceitos" data-idx="${idx}">${pts}</td>
-        <td><input type="text" data-idx="${idx}" class="obs-inp" placeholder="Obs." value="${esc(
-          it.obs || ""
-        )}"></td>`;
-      tbody.appendChild(tr);
+    order.forEach((g) => {
+      const indices = [];
+      r.itens.forEach((it, idx) => {
+        if (String(it.grupo || "") !== g) return;
+        if (it.qtdDeclarada == null) it.qtdDeclarada = 0;
+        if (it.qtdAceita == null) it.qtdAceita = it.qtdDeclarada;
+        const qDecl = Number(it.qtdDeclarada) || 0;
+        if (state.hideZeroCriterios && qDecl <= 0) return;
+        indices.push(idx);
+      });
+      if (!indices.length) return;
+
+      const block = document.createElement("section");
+      block.className = "grupo-block";
+      block.innerHTML = `<header class="grupo-head">
+        <span class="grupo-badge">${esc(g)}</span>
+        <span class="grupo-title">${esc(cats[g] || "Critério " + g)}</span>
+        <span class="muted small">${indices.length} item(ns)</span>
+      </header>`;
+      const list = document.createElement("div");
+      list.className = "grupo-items";
+
+      indices.forEach((idx) => {
+        const it = r.itens[idx];
+        const qDecl = Number(it.qtdDeclarada) || 0;
+        const pts = pontosItem(it);
+        const st =
+          Number(it.qtdAceita) <= 0
+            ? qDecl > 0
+              ? "no"
+              : "zero"
+            : Number(it.qtdAceita) < qDecl
+              ? "pend"
+              : "ok";
+        const hasDil = !!(it.diligencia && it.diligencia.texto);
+        const open = state.diligenciaOpenIdx === idx;
+        const card = document.createElement("article");
+        card.className = "crit-card " + st;
+        card.setAttribute("data-idx", String(idx));
+        card.innerHTML = `
+          <div class="crit-main">
+            <span class="crit-id">${esc(it.criterionId || "—")}</span>
+            <div class="crit-desc">${esc(it.descricao)}</div>
+            <div class="crit-meta">${esc(it.unidade)} · ${
+              it.pontosUnitario != null ? it.pontosUnitario : "—"
+            } pts/unid.</div>
+            ${
+              hasDil && !open
+                ? `<div class="diligencia-saved"><strong>Diligência:</strong> ${esc(
+                    it.diligencia.texto
+                  )}</div>`
+                : ""
+            }
+          </div>
+          <div class="crit-side">
+            <div class="qty-row">
+              <div class="qty-pill">
+                <label>Qtd decl.</label>
+                <span class="val">${qDecl}</span>
+              </div>
+              <div class="qty-pill">
+                <label>Qtd aceita</label>
+                <input type="number" min="0" step="any" class="qtd-aceita" data-idx="${idx}" value="${
+                  it.qtdAceita != null ? it.qtdAceita : 0
+                }" />
+              </div>
+              <div class="qty-pill pts">
+                <label>Pts aceitos</label>
+                <span class="val pts-aceitos" data-idx="${idx}">${pts}</span>
+              </div>
+            </div>
+            <button type="button" class="btn-diligencia ${
+              hasDil ? "active" : ""
+            }" data-idx="${idx}">
+              ${hasDil ? "Editar diligência" : "Marcar para diligência"}
+            </button>
+          </div>
+          ${
+            open
+              ? `<div class="diligencia-box" data-dil-box="${idx}">
+                  <label for="dilTxt${idx}">Descreva sua diligência:</label>
+                  <textarea id="dilTxt${idx}" placeholder="Informe o que deve ser complementado ou esclarecido neste critério…">${esc(
+                    (it.diligencia && it.diligencia.texto) || ""
+                  )}</textarea>
+                  <div class="btn-row">
+                    <button type="button" class="btn btn-primary btn-save-dil" data-idx="${idx}">Salvar diligência</button>
+                    <button type="button" class="btn btn-secondary btn-cancel-dil" data-idx="${idx}">Cancelar</button>
+                    ${
+                      hasDil
+                        ? `<button type="button" class="btn btn-secondary btn-clear-dil" data-idx="${idx}">Remover</button>`
+                        : ""
+                    }
+                  </div>
+                </div>`
+              : ""
+          }`;
+        list.appendChild(card);
+        visible++;
+      });
+
+      block.appendChild(list);
+      box.appendChild(block);
     });
 
-    if (!tbody.children.length) {
-      tbody.innerHTML =
-        '<tr><td colspan="9" class="muted">Nenhum critério com pontuação declarada. Use “Mostrar todos os critérios”.</td></tr>';
+    if (!visible) {
+      box.innerHTML =
+        '<p class="muted">Nenhum critério com pontuação declarada. Use “Mostrar todos os critérios”.</p>';
     }
 
-    tbody.querySelectorAll(".qtd-aceita").forEach((el) => {
+    box.querySelectorAll(".qtd-aceita").forEach((el) => {
       el.addEventListener("input", () => {
         const i = Number(el.getAttribute("data-idx"));
         let v = Number(el.value);
         if (!Number.isFinite(v) || v < 0) v = 0;
         const max = Number(state.req.itens[i].qtdDeclarada);
-        // permitir qtd aceita até o declarado; se declarado 0, permite editar (comissão pode incluir)
         if (Number.isFinite(max) && max > 0 && v > max) v = max;
         state.req.itens[i].qtdAceita = v;
         state.req.itens[i].aceito = v <= 0 ? "no" : "ok";
         const pts = pontosItem(state.req.itens[i]);
-        const cell = tbody.querySelector(`.pts-aceitos[data-idx="${i}"]`);
+        const cell = box.querySelector(`.pts-aceitos[data-idx="${i}"]`);
         if (cell) cell.textContent = String(pts);
-        const tr = el.closest("tr");
+        const card = el.closest(".crit-card");
         const qd = Number(state.req.itens[i].qtdDeclarada) || 0;
-        tr.className =
-          v <= 0 ? (qd > 0 ? "no" : "zero") : v < qd ? "pend" : "ok";
-        if (qd <= 0) tr.classList.add("row-zero");
+        if (card) {
+          card.className =
+            "crit-card " +
+            (v <= 0 ? (qd > 0 ? "no" : "zero") : v < qd ? "pend" : "ok");
+        }
         updateAvaliacao();
       });
     });
-    tbody.querySelectorAll(".obs-inp").forEach((el) => {
-      el.addEventListener("input", () => {
-        const i = Number(el.getAttribute("data-idx"));
-        state.req.itens[i].obs = el.value;
+
+    box.querySelectorAll(".btn-diligencia").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const i = Number(btn.getAttribute("data-idx"));
+        state.diligenciaOpenIdx =
+          state.diligenciaOpenIdx === i ? null : i;
+        renderChecklist();
       });
     });
+    box.querySelectorAll(".btn-save-dil").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const i = Number(btn.getAttribute("data-idx"));
+        const ta = document.getElementById("dilTxt" + i);
+        const txt = (ta && ta.value.trim()) || "";
+        if (!txt) {
+          toast("Descreva a diligência antes de salvar.", "err");
+          return;
+        }
+        state.req.itens[i].diligencia = {
+          texto: txt,
+          em: new Date().toISOString(),
+        };
+        state.req.itens[i].obs = txt;
+        state.diligenciaOpenIdx = null;
+        // marcar que houve diligências no processo
+        state.diligencias = true;
+        const chk = $("chkDiligencias");
+        if (chk) chk.checked = true;
+        syncDiligenciaDatasUI();
+        renderChecklist();
+        updateDiligenciaBtn();
+        toast("Diligência salva no item " + (state.req.itens[i].criterionId || i), "ok");
+      });
+    });
+    box.querySelectorAll(".btn-cancel-dil").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.diligenciaOpenIdx = null;
+        renderChecklist();
+      });
+    });
+    box.querySelectorAll(".btn-clear-dil").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const i = Number(btn.getAttribute("data-idx"));
+        state.req.itens[i].diligencia = null;
+        state.req.itens[i].obs = "";
+        state.diligenciaOpenIdx = null;
+        renderChecklist();
+        updateDiligenciaBtn();
+      });
+    });
+
+    updateDiligenciaBtn();
   }
 
   function itensParaAvaliacao() {
@@ -600,6 +897,8 @@
       });
       state.req = data;
       state.hipotesesSelecionadas = [];
+      state.confirmedFields = {};
+      state.diligenciaOpenIdx = null;
       renderIdent();
       renderChecklist();
       renderHipotesesDropdown();
@@ -607,6 +906,7 @@
       $("step3").classList.remove("hidden");
       updateAvaliacao();
       checkImpedimento();
+      updateDiligenciaBtn();
       const m = data._merge || {};
       const cat = data._catalogMeta || {};
       const comQtd =
@@ -659,11 +959,40 @@
     return membros.filter((m) => state.signerChecked[m.siape]);
   }
 
+  function buildBaseCtx(av) {
+    return {
+      req: state.req,
+      numeroProcesso: state.numeroProcesso.trim(),
+      dataRequerimento: state.dataRequerimento || "—",
+      prioridade: state.prioridade,
+      diligencias: state.diligencias,
+      dataEnvioDiligencia: state.dataEnvioDiligencia
+        ? fmtDateBr(state.dataEnvioDiligencia)
+        : "",
+      dataRetornoDiligencia: state.dataRetornoDiligencia
+        ? fmtDateBr(state.dataRetornoDiligencia)
+        : "",
+      vigencia: state.vigencia,
+      comissao: RSCComissoes.getComissao(state.comissaoId),
+      assinantes: collectAssinantes(),
+      avaliacao: av,
+      complexidadeDesc: av.nivel?.complexidadeDesc,
+    };
+  }
+
   async function gerarParecer() {
     if (!state.req) return toast("Carregue o requerimento.", "err");
     if (!state.comissaoId) return toast("Selecione o campus/Reitoria.", "err");
     if (!state.numeroProcesso.trim())
       return toast("Informe o número do processo SIPAC.", "err");
+    if (state.diligencias) {
+      if (!state.dataEnvioDiligencia || !state.dataRetornoDiligencia) {
+        return toast(
+          "Houve diligências: informe a data de envio ao servidor e a data de retorno à comissão.",
+          "err"
+        );
+      }
+    }
 
     const av = RSCRegras.avaliar(state.req, itensParaAvaliacao());
     if (!av.favoravel && !state.hipotesesSelecionadas.length) {
@@ -678,34 +1007,88 @@
       RSCRegras.textoJustificativa(state.hipotesesSelecionadas);
 
     const ctx = {
-      req: state.req,
-      numeroProcesso: state.numeroProcesso.trim(),
-      dataRequerimento: state.dataRequerimento || "—",
-      prioridade: state.prioridade,
-      diligencias: state.diligencias,
-      vigencia: state.vigencia,
-      comissao: RSCComissoes.getComissao(state.comissaoId),
-      assinantes: collectAssinantes(),
-      avaliacao: av,
+      ...buildBaseCtx(av),
       justificativa: just,
       hipotesesArt14: state.hipotesesSelecionadas,
-      complexidadeDesc: av.nivel?.complexidadeDesc,
     };
 
     try {
       toast("Gerando PDF do parecer…", "info");
       const bytes = await RSCParecerPdf.gerarParecerPdf(ctx);
-      const blob = new Blob([bytes], { type: "application/pdf" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      const safe = (state.req.siape || "servidor").replace(/\W/g, "");
-      a.download = `Parecer_RSC_${safe}_${state.numeroProcesso.replace(/\W/g, "_")}.pdf`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      downloadBytes(
+        bytes,
+        `Parecer_RSC_${(state.req.siape || "servidor").replace(/\W/g, "")}_${state.numeroProcesso.replace(/\W/g, "_")}.pdf`
+      );
       toast("Parecer PDF gerado.", "ok");
     } catch (e) {
       console.error(e);
       toast(e.message || "Erro ao gerar PDF", "err");
+    }
+  }
+
+  function downloadBytes(bytes, filename) {
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+
+  async function gerarDiligencia() {
+    if (!state.req) return toast("Carregue o requerimento.", "err");
+    if (!state.comissaoId) return toast("Selecione o campus/Reitoria.", "err");
+    if (!state.numeroProcesso.trim())
+      return toast("Informe o número do processo SIPAC.", "err");
+
+    const itensDil = (state.req.itens || []).filter(
+      (i) => i.diligencia && i.diligencia.texto
+    );
+    if (!itensDil.length) {
+      return toast(
+        "Marque ao menos um critério com “Marcar para diligência” e salve o texto.",
+        "err"
+      );
+    }
+
+    // ao gerar diligência, garantir flag e pedir datas se ainda não houver
+    state.diligencias = true;
+    const chk = $("chkDiligencias");
+    if (chk) chk.checked = true;
+    syncDiligenciaDatasUI();
+    if (!state.dataEnvioDiligencia) {
+      return toast(
+        "Informe a data de envio da diligência ao servidor (no passo 1).",
+        "err"
+      );
+    }
+
+    const av = RSCRegras.avaliar(state.req, itensParaAvaliacao());
+    const ctx = {
+      ...buildBaseCtx(av),
+      itensDiligencia: itensDil.map((i) => ({
+        criterionId: i.criterionId,
+        grupo: i.grupo,
+        descricao: i.descricao,
+        unidade: i.unidade,
+        pontosUnitario: i.pontosUnitario,
+        qtdDeclarada: i.qtdDeclarada,
+        qtdAceita: i.qtdAceita,
+        texto: i.diligencia.texto,
+      })),
+    };
+
+    try {
+      toast("Gerando PDF de diligência…", "info");
+      const bytes = await RSCParecerPdf.gerarDiligenciaPdf(ctx);
+      downloadBytes(
+        bytes,
+        `Diligencia_RSC_${(state.req.siape || "servidor").replace(/\W/g, "")}_${state.numeroProcesso.replace(/\W/g, "_")}.pdf`
+      );
+      toast("PDF de diligência gerado.", "ok");
+    } catch (e) {
+      console.error(e);
+      toast(e.message || "Erro ao gerar diligência", "err");
     }
   }
 
@@ -731,7 +1114,20 @@
     });
     $("chkDiligencias").addEventListener("change", (e) => {
       state.diligencias = e.target.checked;
+      syncDiligenciaDatasUI();
     });
+    const envDil = $("dataEnvioDil");
+    if (envDil) {
+      envDil.addEventListener("change", (e) => {
+        state.dataEnvioDiligencia = e.target.value;
+      });
+    }
+    const retDil = $("dataRetornoDil");
+    if (retDil) {
+      retDil.addEventListener("change", (e) => {
+        state.dataRetornoDiligencia = e.target.value;
+      });
+    }
     $("vigencia").addEventListener("change", (e) => {
       state.vigencia = e.target.value
         ? e.target.value.split("-").reverse().join("/")
@@ -780,6 +1176,9 @@
       updateAvaliacao();
     });
     $("btnParecer").addEventListener("click", gerarParecer);
+    const btnDil = $("btnGerarDiligencia");
+    if (btnDil) btnDil.addEventListener("click", gerarDiligencia);
+    syncDiligenciaDatasUI();
 
     // toggle painel hipóteses
     const toggle = $("toggleHipoteses");
