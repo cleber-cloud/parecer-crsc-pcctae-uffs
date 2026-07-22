@@ -585,7 +585,7 @@
     }
 
     if (dilGeral) {
-      text(`${sec}. Diligência geral (sem vínculo a critérios específicos)`, {
+      text(`${sec}. Diligência geral`, {
         size: 12,
         bold: true,
       });
