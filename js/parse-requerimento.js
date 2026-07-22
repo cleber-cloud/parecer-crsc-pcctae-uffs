@@ -627,17 +627,13 @@
 
     const pontTotal =
       totais.pontTotal != null ? totais.pontTotal : sumItens || null;
+    // pontuação mínima extraída do PDF só auxilia a inferir o nível;
+    // o valor final é sempre o canônico do Decreto / calculadora.
     const nivelRsc = inferNivel(lines, flat, itens, {
       ...totais,
       pontTotal,
     });
-    const nivelObj = global.RSCRegras && global.RSCRegras.NIVEIS[nivelRsc];
-    const pontMin =
-      totais.pontMin != null
-        ? totais.pontMin
-        : nivelObj
-          ? nivelObj.minPontos
-          : null;
+    const pontMin = canonicalMinPontos(nivelRsc);
     const excedente =
       pontTotal != null && pontMin != null
         ? Math.round((pontTotal - pontMin) * 10) / 10
@@ -653,6 +649,7 @@
       email: header.email,
       nivelRsc,
       pontuacaoMinimaDeclarada: pontMin,
+      pontuacaoMinimaExtraida: totais.pontMin,
       pontuacaoTotalDeclarada: pontTotal,
       qtdCriteriosDeclarada: totais.qtd != null ? totais.qtd : itens.length,
       excedenteDeclarado: excedente,
@@ -660,6 +657,29 @@
       itens,
       rawPreview: flat.slice(0, 1500),
     };
+  }
+
+  /** Tabela canônica (Decreto 13.048/2026 / calculadora): min pts por nível. */
+  function canonicalMinPontos(nivelId) {
+    const id = String(nivelId || "")
+      .replace(/RSC-PCCTAE\s*/i, "")
+      .trim()
+      .toUpperCase();
+    const N = global.RSCRegras && global.RSCRegras.NIVEIS;
+    if (N && N[id] && N[id].minPontos != null) return N[id].minPontos;
+    const FALLBACK = { I: 10, II: 15, III: 25, IV: 30, V: 52, VI: 75 };
+    return FALLBACK[id] != null ? FALLBACK[id] : null;
+  }
+
+  function canonicalMinItens(nivelId) {
+    const id = String(nivelId || "")
+      .replace(/RSC-PCCTAE\s*/i, "")
+      .trim()
+      .toUpperCase();
+    const N = global.RSCRegras && global.RSCRegras.NIVEIS;
+    if (N && N[id] && N[id].minItens != null) return N[id].minItens;
+    const FALLBACK = { I: 1, II: 2, III: 2, IV: 3, V: 5, VI: 7 };
+    return FALLBACK[id] != null ? FALLBACK[id] : null;
   }
 
   /** Compat: texto flat antigo */
@@ -1111,12 +1131,7 @@
       lotacao: take("lotacao", "lotacao", t.lotacao, o.lotacao),
       email: take("email", "email", t.email, o.email),
       nivelRsc: "",
-      pontuacaoMinimaDeclarada: pickNumber(
-        "pontuacaoMinimaDeclarada",
-        t.pontuacaoMinimaDeclarada,
-        o.pontuacaoMinimaDeclarada,
-        null
-      ),
+      pontuacaoMinimaDeclarada: null,
       pontuacaoTotalDeclarada: pickNumber(
         "pontuacaoTotalDeclarada",
         t.pontuacaoTotalDeclarada,
@@ -1155,31 +1170,42 @@
     }
 
     // Nível RSC: prioridade
-    // 1) pontuação mínima (mais confiável quando presente)
-    // 2) acordo texto+OCR
-    // 3) texto se score maior
-    // 4) OCR
+    // 1) pontuação mínima *extraída do PDF* (pista, se houver)
+    // 2) acordo texto+OCR do nível marcado
+    // 3) texto / OCR
+    // 4) total − excedente
     const nivelDetail = pickFieldDetail(t.nivelRsc, o.nivelRsc, "nivel");
     let nivel = nivelDetail.value || "";
     let nivelSrc = nivelDetail.source;
-    if (merged.pontuacaoMinimaDeclarada != null) {
-      const byMin = MIN_MAP[Math.round(merged.pontuacaoMinimaDeclarada)];
+    const minExtraida =
+      t.pontuacaoMinimaExtraida != null
+        ? t.pontuacaoMinimaExtraida
+        : o.pontuacaoMinimaExtraida != null
+          ? o.pontuacaoMinimaExtraida
+          : t.pontuacaoMinimaDeclarada != null &&
+              // se o parse antigo já tinha min (antes do canônico), ainda serve de pista
+              t.pontuacaoMinimaDeclarada
+            ? t.pontuacaoMinimaDeclarada
+            : o.pontuacaoMinimaDeclarada;
+    if (minExtraida != null) {
+      const byMin = MIN_MAP[Math.round(minExtraida)];
       if (byMin) {
-        // se min diz V e algum parse disse VI (caso Jocelaine), confiar no min
         if (!nivel || nivel !== byMin) {
-          nivel = byMin;
-          nivelSrc = "pont-min";
-        } else {
-          nivelSrc = fields.pontuacaoMinimaDeclarada?.source || "pont-min";
+          // só sobrescreve se o PDF trouxe mínimo explícito e o nível divergiu
+          if (
+            t.pontuacaoMinimaExtraida != null ||
+            o.pontuacaoMinimaExtraida != null
+          ) {
+            nivel = byMin;
+            nivelSrc = "pont-min-extraida";
+          }
         }
       }
     }
-    // se ainda vazio, tentar inferir de novo no texto combinado
     if (!nivel) {
       nivel = t.nivelRsc || o.nivelRsc || "";
       nivelSrc = t.nivelRsc ? "text" : o.nivelRsc ? "ocr" : "none";
     }
-    // se conflito V/VI e total-excedente implica min
     if (
       nivelDetail.conflict &&
       merged.pontuacaoTotalDeclarada != null &&
@@ -1205,14 +1231,22 @@
         !!t.nivelRsc &&
         !!o.nivelRsc &&
         String(t.nivelRsc).toUpperCase() === String(o.nivelRsc).toUpperCase(),
-      conflict: !!nivelDetail.conflict && nivelSrc !== "pont-min",
+      conflict: !!nivelDetail.conflict && !String(nivelSrc).includes("pont-min"),
     };
 
-    // completar min a partir do nível se ainda faltar
-    if (merged.pontuacaoMinimaDeclarada == null && merged.nivelRsc) {
-      const nv = global.RSCRegras && global.RSCRegras.NIVEIS[merged.nivelRsc];
-      if (nv) merged.pontuacaoMinimaDeclarada = nv.minPontos;
-    }
+    // Pontuação mínima SEMPRE canônica pelo nível (não depende de texto/OCR)
+    const pontMinCanon = canonicalMinPontos(merged.nivelRsc);
+    merged.pontuacaoMinimaDeclarada = pontMinCanon;
+    merged.minItensExigidos = canonicalMinItens(merged.nivelRsc);
+    fields.pontuacaoMinimaDeclarada = {
+      value: pontMinCanon,
+      text: t.pontuacaoMinimaExtraida != null ? t.pontuacaoMinimaExtraida : null,
+      ocr: o.pontuacaoMinimaExtraida != null ? o.pontuacaoMinimaExtraida : null,
+      source: "catalogo",
+      agree: true,
+      conflict: false,
+      canonical: true,
+    };
 
     if (merged.qtdCriteriosDeclarada == null) {
       merged.qtdCriteriosDeclarada = merged.itens.length;
@@ -1399,6 +1433,8 @@
     mergeParses,
     scoreParse,
     pickFieldDetail,
+    canonicalMinPontos,
+    canonicalMinItens,
     extractPdfLines,
     extractPdfText: async (f) => {
       const { lines } = await extractPdfLines(f);

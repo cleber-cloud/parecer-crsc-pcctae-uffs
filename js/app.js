@@ -34,13 +34,13 @@
     { key: "email", label: "E-mail", type: "email" },
     { key: "nivelRsc", label: "Nível RSC pedido", type: "nivel" },
     {
-      key: "pontuacaoTotalDeclarada",
-      label: "Pontos declarados (total)",
-      type: "number",
+      key: "pontuacaoMinimaDeclarada",
+      label: "Pontuação mínima (canônica)",
+      type: "derived-min",
     },
     {
-      key: "pontuacaoMinimaDeclarada",
-      label: "Pontuação mínima",
+      key: "pontuacaoTotalDeclarada",
+      label: "Pontos declarados (total)",
       type: "number",
     },
     {
@@ -50,8 +50,34 @@
     },
   ];
 
+  function applyCanonicalMinFromNivel() {
+    if (!state.req) return;
+    const nv = RSCRegras.NIVEIS[state.req.nivelRsc];
+    if (!nv) return;
+    state.req.pontuacaoMinimaDeclarada = nv.minPontos;
+    state.req.minItensExigidos = nv.minItens;
+    if (state.req.pontuacaoTotalDeclarada != null) {
+      state.req.excedenteDeclarado =
+        Math.round(
+          (state.req.pontuacaoTotalDeclarada - nv.minPontos) * 10
+        ) / 10;
+    }
+    if (state.req._fields) {
+      state.req._fields.pontuacaoMinimaDeclarada = {
+        value: nv.minPontos,
+        text: null,
+        ocr: null,
+        source: "catalogo",
+        agree: true,
+        conflict: false,
+        canonical: true,
+      };
+    }
+  }
+
   function fieldNeedsConfirm(f) {
     if (!f) return false;
+    if (f.canonical || f.source === "catalogo") return false;
     const hasT = f.text != null && String(f.text).trim() !== "";
     const hasO = f.ocr != null && String(f.ocr).trim() !== "";
     if (hasT && hasO) return !f.agree || !!f.conflict;
@@ -332,7 +358,7 @@
       email: "E-mail",
       nivelRsc: "Nível RSC",
       nivelClassificacao: "Classificação",
-      pontuacaoMinimaDeclarada: "Pts mínimos",
+      pontuacaoMinimaDeclarada: "Pts mínimos (canônico)",
       pontuacaoTotalDeclarada: "Pts totais",
       qtdCriteriosDeclarada: "Qtd critérios",
       saldoAnterior: "Saldo anterior",
@@ -353,19 +379,31 @@
       .filter((k) => r._fields[k])
       .map((k) => {
         const f = r._fields[k];
-        const conflict = f.conflict
-          ? ' class="row-conflict"'
-          : f.agree
+        const isCanon = f.canonical || f.source === "catalogo";
+        const conflict =
+          isCanon
             ? ' class="row-agree"'
-            : "";
+            : f.conflict
+              ? ' class="row-conflict"'
+              : f.agree
+                ? ' class="row-agree"'
+                : "";
         const fmt = (v) =>
           v == null || v === "" ? "—" : esc(String(v));
         return `<tr${conflict}>
           <td>${esc(labels[k] || k)}</td>
-          <td class="small">${fmt(f.text)}</td>
-          <td class="small">${fmt(f.ocr)}</td>
-          <td><strong>${fmt(f.value)}</strong></td>
-          <td>${srcBadge(f.source, f.agree)}</td>
+          <td class="small">${isCanon ? "—" : fmt(f.text)}</td>
+          <td class="small">${isCanon ? "—" : fmt(f.ocr)}</td>
+          <td><strong>${fmt(f.value)}</strong>${
+            isCanon
+              ? ' <span class="muted small">(tabela oficial)</span>'
+              : ""
+          }</td>
+          <td>${
+            isCanon
+              ? '<span class="src-badge src-derived">catálogo</span>'
+              : srcBadge(f.source, f.agree)
+          }</td>
         </tr>`;
       })
       .join("");
@@ -432,9 +470,7 @@
         : "";
       let control = "";
       if (meta.type === "nivel") {
-        control = `<select data-field="${key}" class="ident-inp" ${
-          pending ? "" : ""
-        }>
+        control = `<select data-field="${key}" class="ident-inp">
           ${["I", "II", "III", "IV", "V", "VI"]
             .map(
               (n) =>
@@ -444,9 +480,14 @@
             )
             .join("")}
         </select>`;
+      } else if (meta.type === "derived-min") {
+        const nv = RSCRegras.NIVEIS[r.nivelRsc];
+        const min = nv ? nv.minPontos : val;
+        control = `<input type="text" data-field="${key}" class="ident-inp" value="${esc(
+          min != null ? min : "—"
+        )}" readonly title="Valor fixo do Decreto/calculadora conforme o nível RSC" />`;
       } else {
         const ro = pending ? "" : "readonly";
-        // campos com discórdia: sempre editáveis; concordantes: readonly mas clicáveis via focus? keep readonly when ok
         control = `<input type="${
           meta.type === "number" ? "number" : meta.type === "email" ? "email" : "text"
         }" data-field="${key}" class="ident-inp" value="${esc(
@@ -454,17 +495,19 @@
         )}" step="any" ${pending ? "" : ro} />`;
       }
       const dual =
-        f && (f.text != null || f.ocr != null)
-          ? `<span class="muted" style="font-size:.68rem">texto: ${esc(
-              f.text == null || f.text === "" ? "—" : f.text
-            )} · OCR: ${esc(
-              f.ocr == null || f.ocr === "" ? "—" : f.ocr
-            )}</span>`
-          : "";
+        meta.type === "derived-min"
+          ? `<span class="muted" style="font-size:.68rem">Tabela canônica: I=10 · II=15 · III=25 · IV=30 · V=52 · VI=75</span>`
+          : f && (f.text != null || f.ocr != null)
+            ? `<span class="muted" style="font-size:.68rem">texto: ${esc(
+                f.text == null || f.text === "" ? "—" : f.text
+              )} · OCR: ${esc(
+                f.ocr == null || f.ocr === "" ? "—" : f.ocr
+              )}</span>`
+            : "";
       return `<div class="${cls}" data-field-wrap="${key}">
         <span class="k">${esc(meta.label)}</span>
         ${control}
-        ${hint}
+        ${meta.type === "derived-min" ? "" : hint}
         ${dual}
       </div>`;
     }).join("");
@@ -476,12 +519,13 @@
       <div class="ident-form">${fieldsHtml}</div>`;
 
     $("identBox").querySelectorAll(".ident-inp").forEach((el) => {
+      const key0 = el.getAttribute("data-field");
+      if (key0 === "pontuacaoMinimaDeclarada") return; // sempre canônico
       const apply = () => {
         const key = el.getAttribute("data-field");
         let v = el.value;
         if (
           key === "pontuacaoTotalDeclarada" ||
-          key === "pontuacaoMinimaDeclarada" ||
           key === "qtdCriteriosDeclarada"
         ) {
           const n = Number(String(v).replace(",", "."));
@@ -490,32 +534,15 @@
         state.req[key] = v;
         markFieldConfirmed(key);
         if (key === "nivelRsc") {
-          const nv = RSCRegras.NIVEIS[v];
-          if (nv) {
-            state.req.pontuacaoMinimaDeclarada = nv.minPontos;
-            if (state.req.pontuacaoTotalDeclarada != null) {
-              state.req.excedenteDeclarado =
-                Math.round(
-                  (state.req.pontuacaoTotalDeclarada - nv.minPontos) * 10
-                ) / 10;
-            }
-          }
+          applyCanonicalMinFromNivel();
+          // atualiza o campo readonly da mínima
+          const minEl = $("identBox").querySelector(
+            '[data-field="pontuacaoMinimaDeclarada"]'
+          );
+          if (minEl) minEl.value = state.req.pontuacaoMinimaDeclarada ?? "—";
         }
-        if (
-          key === "pontuacaoTotalDeclarada" ||
-          key === "pontuacaoMinimaDeclarada"
-        ) {
-          if (
-            state.req.pontuacaoTotalDeclarada != null &&
-            state.req.pontuacaoMinimaDeclarada != null
-          ) {
-            state.req.excedenteDeclarado =
-              Math.round(
-                (state.req.pontuacaoTotalDeclarada -
-                  state.req.pontuacaoMinimaDeclarada) *
-                  10
-              ) / 10;
-          }
+        if (key === "pontuacaoTotalDeclarada") {
+          applyCanonicalMinFromNivel();
         }
         if (r._fields && r._fields[key]) {
           r._fields[key].value = v;
@@ -528,8 +555,8 @@
         );
         if (wrap) {
           wrap.classList.remove("needs-confirm");
-          const hint = wrap.querySelector(".confirm-hint");
-          if (hint) hint.remove();
+          const h = wrap.querySelector(".confirm-hint");
+          if (h) h.remove();
           el.removeAttribute("readonly");
         }
         updateAvaliacao();
@@ -899,6 +926,7 @@
       state.hipotesesSelecionadas = [];
       state.confirmedFields = {};
       state.diligenciaOpenIdx = null;
+      applyCanonicalMinFromNivel();
       renderIdent();
       renderChecklist();
       renderHipotesesDropdown();
