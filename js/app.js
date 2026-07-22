@@ -13,7 +13,9 @@
     diligencias: false,
     vigencia: "",
     anexoNumero: "I",
-    justificativa: "",
+    hipotesesSelecionadas: [],
+    /** @type {Record<string, boolean>} chave siape → marcado */
+    signerChecked: {},
   };
 
   const $ = (id) => document.getElementById(id);
@@ -23,7 +25,15 @@
     el.textContent = msg;
     el.className = "alert alert-" + (type || "info");
     el.classList.remove("hidden");
-    setTimeout(() => el.classList.add("hidden"), 6000);
+    setTimeout(() => el.classList.add("hidden"), 6500);
+  }
+
+  function esc(s) {
+    return String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
   }
 
   function fillUnidades() {
@@ -35,6 +45,82 @@
       o.textContent = u.nome;
       sel.appendChild(o);
     });
+  }
+
+  function renderHipotesesDropdown() {
+    const box = $("hipotesesChecks");
+    if (!box) return;
+    box.innerHTML = "";
+    const cap = document.createElement("p");
+    cap.className = "muted small";
+    cap.style.margin = "0 0 .6rem";
+    cap.textContent = RSCRegras.CAPUT_ART14;
+    box.appendChild(cap);
+
+    RSCRegras.HIPOTESES_ART14.forEach((h) => {
+      const lab = document.createElement("label");
+      lab.className = "signer hip-item";
+      lab.innerHTML = `<input type="checkbox" class="hip-cb" data-id="${h.id}" ${
+        state.hipotesesSelecionadas.includes(h.id) ? "checked" : ""
+      } />
+        <span class="small">${esc(h.texto)}</span>`;
+      box.appendChild(lab);
+    });
+
+    box.querySelectorAll(".hip-cb").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        const id = cb.getAttribute("data-id");
+        if (cb.checked) {
+          if (!state.hipotesesSelecionadas.includes(id))
+            state.hipotesesSelecionadas.push(id);
+        } else {
+          state.hipotesesSelecionadas = state.hipotesesSelecionadas.filter(
+            (x) => x !== id
+          );
+        }
+        syncJustificativaFromHipoteses();
+      });
+    });
+  }
+
+  function syncJustificativaFromHipoteses() {
+    const ta = $("justificativa");
+    if (!ta) return;
+    ta.value = RSCRegras.textoJustificativa(state.hipotesesSelecionadas);
+  }
+
+  function applySugestoesHipoteses(sugestoes) {
+    state.hipotesesSelecionadas = [...new Set(sugestoes || [])];
+    renderHipotesesDropdown();
+    syncJustificativaFromHipoteses();
+  }
+
+  /**
+   * Pares titular/suplente por segmento (e ordem dentro do segmento).
+   */
+  function paresAssinatura(comissaoId) {
+    const membros = RSCComissoes.todosMembros(comissaoId);
+    const bySeg = {};
+    membros.forEach((m) => {
+      const s = m.segmento || "OUTROS";
+      if (!bySeg[s]) bySeg[s] = { titulares: [], suplentes: [] };
+      if (m.funcao === "Titular") bySeg[s].titulares.push(m);
+      else bySeg[s].suplentes.push(m);
+    });
+    const pares = [];
+    Object.keys(bySeg).forEach((seg) => {
+      const t = bySeg[seg].titulares;
+      const s = bySeg[seg].suplentes;
+      const n = Math.max(t.length, s.length);
+      for (let i = 0; i < n; i++) {
+        pares.push({
+          segmento: seg,
+          titular: t[i] || null,
+          suplente: s[i] || null,
+        });
+      }
+    });
+    return pares;
   }
 
   function renderSigners() {
@@ -49,14 +135,67 @@
     $("comissaoInfo").textContent = com
       ? `Portarias ${com.portariaInstituicao} (institui) e ${com.portariaDesignacao} (designa).`
       : "";
-    const titulares = RSCComissoes.titulares(id);
-    titulares.forEach((m, i) => {
-      const row = document.createElement("label");
-      row.className = "signer";
-      row.innerHTML = `<input type="checkbox" class="signer-cb" data-i="${i}" checked>
-        <span><strong>${m.nome}</strong><br><span class="small">SIAPE ${m.siape} · ${m.segmento} · Titular</span></span>`;
-      box.appendChild(row);
+
+    const pares = paresAssinatura(id);
+    // init defaults: titulares checked, suplentes not
+    pares.forEach((p) => {
+      if (p.titular && state.signerChecked[p.titular.siape] === undefined)
+        state.signerChecked[p.titular.siape] = true;
+      if (p.suplente && state.signerChecked[p.suplente.siape] === undefined)
+        state.signerChecked[p.suplente.siape] = false;
     });
+
+    pares.forEach((p, pi) => {
+      const wrap = document.createElement("div");
+      wrap.className = "signer-pair";
+      wrap.innerHTML = `<div class="small" style="font-weight:700;color:#065228;margin-bottom:.35rem">${esc(
+        p.segmento
+      )}</div>`;
+      const row = document.createElement("div");
+      row.className = "signer-pair-row";
+
+      function mk(m, role, pairIndex) {
+        if (!m) {
+          const empty = document.createElement("div");
+          empty.className = "signer muted small";
+          empty.textContent = role + ": —";
+          return empty;
+        }
+        const lab = document.createElement("label");
+        lab.className = "signer";
+        const checked = !!state.signerChecked[m.siape];
+        lab.innerHTML = `<input type="checkbox" class="signer-cb" data-siape="${m.siape}" data-role="${role}" data-pair="${pairIndex}" ${
+          checked ? "checked" : ""
+        } />
+          <span><strong>${esc(m.nome)}</strong><br>
+          <span class="small">SIAPE ${esc(m.siape)} · ${esc(role)}</span></span>`;
+        return lab;
+      }
+
+      row.appendChild(mk(p.titular, "Titular", pi));
+      row.appendChild(mk(p.suplente, "Suplente", pi));
+      wrap.appendChild(row);
+      box.appendChild(wrap);
+    });
+
+    box.querySelectorAll(".signer-cb").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        const siape = cb.getAttribute("data-siape");
+        const role = cb.getAttribute("data-role");
+        const pair = cb.getAttribute("data-pair");
+        state.signerChecked[siape] = cb.checked;
+        if (cb.checked) {
+          // desmarca o outro do mesmo par
+          box.querySelectorAll(`.signer-cb[data-pair="${pair}"]`).forEach((other) => {
+            if (other !== cb) {
+              other.checked = false;
+              state.signerChecked[other.getAttribute("data-siape")] = false;
+            }
+          });
+        }
+      });
+    });
+
     checkImpedimento();
   }
 
@@ -97,12 +236,11 @@
       </p>`;
   }
 
-  function esc(s) {
-    return String(s ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+  function pontosItem(it) {
+    const pu = Number(it.pontosUnitario) || 0;
+    const q = Number(it.qtdAceita);
+    if (Number.isFinite(q) && pu > 0) return Math.round(q * pu * 10) / 10;
+    return 0;
   }
 
   function renderChecklist() {
@@ -111,34 +249,57 @@
     tbody.innerHTML = "";
     if (!r || !r.itens.length) {
       tbody.innerHTML =
-        '<tr><td colspan="6" class="muted">Nenhum critério extraído. Ajuste o PDF ou confira o texto.</td></tr>';
+        '<tr><td colspan="8" class="muted">Nenhum critério extraído.</td></tr>';
       return;
     }
     r.itens.forEach((it, idx) => {
+      if (it.qtdDeclarada == null && it.pontosUnitario && it.pontosObtidos) {
+        it.qtdDeclarada =
+          Math.round((it.pontosObtidos / it.pontosUnitario) * 1000) / 1000;
+      }
+      if (it.qtdAceita == null) it.qtdAceita = it.qtdDeclarada ?? 0;
+      const pts = pontosItem(it);
       const tr = document.createElement("tr");
-      tr.className = it.aceito === "ok" ? "ok" : it.aceito === "no" ? "no" : "pend";
+      const st =
+        Number(it.qtdAceita) <= 0
+          ? "no"
+          : Number(it.qtdAceita) < Number(it.qtdDeclarada)
+            ? "pend"
+            : "ok";
+      tr.className = st;
       tr.innerHTML = `
         <td>${esc(it.grupo || "—")}</td>
         <td>${esc(it.descricao)}</td>
         <td>${esc(it.unidade)}</td>
-        <td>${it.pontosObtidos != null ? it.pontosObtidos : "—"}</td>
-        <td>
-          <select data-idx="${idx}" class="aceite-sel">
-            <option value="pend" ${it.aceito === "pend" ? "selected" : ""}>Pendente</option>
-            <option value="ok" ${it.aceito === "ok" ? "selected" : ""}>Comprovado</option>
-            <option value="no" ${it.aceito === "no" ? "selected" : ""}>Não comprovado</option>
-          </select>
-        </td>
-        <td><input type="text" data-idx="${idx}" class="obs-inp" placeholder="Obs." value="${esc(it.obs || "")}"></td>`;
+        <td class="num">${it.pontosUnitario != null ? it.pontosUnitario : "—"}</td>
+        <td class="num">${it.qtdDeclarada != null ? it.qtdDeclarada : "—"}</td>
+        <td><input type="number" min="0" step="any" class="qtd-aceita" data-idx="${idx}" value="${
+          it.qtdAceita != null ? it.qtdAceita : 0
+        }" style="width:4.5rem"></td>
+        <td class="num pts-aceitos" data-idx="${idx}">${pts}</td>
+        <td><input type="text" data-idx="${idx}" class="obs-inp" placeholder="Obs." value="${esc(
+          it.obs || ""
+        )}"></td>`;
       tbody.appendChild(tr);
     });
-    tbody.querySelectorAll(".aceite-sel").forEach((el) => {
-      el.addEventListener("change", () => {
+
+    tbody.querySelectorAll(".qtd-aceita").forEach((el) => {
+      el.addEventListener("input", () => {
         const i = Number(el.getAttribute("data-idx"));
-        state.req.itens[i].aceito = el.value;
+        let v = Number(el.value);
+        if (!Number.isFinite(v) || v < 0) v = 0;
+        const max = Number(state.req.itens[i].qtdDeclarada);
+        if (Number.isFinite(max) && v > max) v = max;
+        state.req.itens[i].qtdAceita = v;
+        state.req.itens[i].aceito = v <= 0 ? "no" : "ok";
+        const pts = pontosItem(state.req.itens[i]);
+        const cell = tbody.querySelector(`.pts-aceitos[data-idx="${i}"]`);
+        if (cell) cell.textContent = String(pts);
+        const tr = el.closest("tr");
+        const qd = Number(state.req.itens[i].qtdDeclarada);
+        tr.className =
+          v <= 0 ? "no" : Number.isFinite(qd) && v < qd ? "pend" : "ok";
         updateAvaliacao();
-        el.closest("tr").className =
-          el.value === "ok" ? "ok" : el.value === "no" ? "no" : "pend";
       });
     });
     tbody.querySelectorAll(".obs-inp").forEach((el) => {
@@ -152,64 +313,44 @@
   function itensParaAvaliacao() {
     return (state.req?.itens || []).map((it) => ({
       descricao: it.descricao,
-      pontosObtidos: it.aceito === "ok" ? Number(it.pontosObtidos) || 0 : 0,
       grupo: it.grupo,
-      aceito: it.aceito,
+      qtdDeclarada: it.qtdDeclarada,
+      qtdAceita: it.qtdAceita,
+      pontosAceitos: pontosItem(it),
+      aceito: Number(it.qtdAceita) > 0 ? "ok" : "no",
     }));
   }
 
   function updateAvaliacao() {
     if (!state.req) return;
-    // por padrão, para teste: se todos pendentes, tratar como ok para prévia matemática
-    const itens = state.req.itens.map((it) => {
-      const aceito = it.aceito === "pend" ? "ok" : it.aceito;
-      return {
-        descricao: it.descricao,
-        pontosObtidos: aceito === "ok" ? Number(it.pontosObtidos) || 0 : 0,
-        grupo: it.grupo,
-        aceito,
-      };
-    });
-    // se usuário já marcou algo, usar marcações reais
-    const marked = state.req.itens.some((i) => i.aceito !== "pend");
-    const finalItens = marked
-      ? state.req.itens.map((it) => ({
-          descricao: it.descricao,
-          pontosObtidos: it.aceito === "ok" ? Number(it.pontosObtidos) || 0 : 0,
-          grupo: it.grupo,
-          aceito: it.aceito,
-        }))
-      : itens;
-
-    const av = RSCRegras.avaliar(state.req, finalItens);
+    const av = RSCRegras.avaliar(state.req, itensParaAvaliacao());
     state._avaliacao = av;
-    state._avaliacaoMode = marked ? "marcado" : "previa-todos-ok";
 
     $("metricsBox").innerHTML = `
       <div class="metric"><div class="k">Mín. pontos</div><div class="v">${av.minPontos ?? "—"}</div></div>
-      <div class="metric"><div class="k">Pontos (aceitos)</div><div class="v">${av.pontosObtidos}</div></div>
+      <div class="metric"><div class="k">Pontos aceitos</div><div class="v">${av.pontosObtidos}</div></div>
       <div class="metric"><div class="k">Mín. critérios</div><div class="v">${av.minItens ?? "—"}</div></div>
-      <div class="metric"><div class="k">Critérios ok</div><div class="v">${av.qtdCriterios}</div></div>
+      <div class="metric"><div class="k">Critérios com qtd &gt; 0</div><div class="v">${av.qtdCriterios}</div></div>
       <div class="metric"><div class="k">Saldo</div><div class="v">${av.saldoPontuacao}</div></div>
-      <div class="metric"><div class="k">Prévia parecer</div><div class="v" style="font-size:1rem">${av.favoravel ? "Favorável" : "Não favorável"}</div></div>
+      <div class="metric"><div class="k">Prévia</div><div class="v" style="font-size:1rem">${
+        av.favoravel ? "Favorável" : "Não favorável"
+      }</div></div>
     `;
 
     const hyp = $("hipotesesBox");
     if (av.favoravel) {
       hyp.className = "alert alert-ok";
       hyp.innerHTML =
-        "<strong>Prévia:</strong> requisitos quantitativos atendidos" +
-        (marked ? "" : " (simulando todos os itens como comprovados até a comissão marcar)") +
-        ".";
+        "<strong>Prévia quantitativa:</strong> pontuação, quantidade de critérios e complexidade atendidos com as quantidades aceitas. Confira o mérito documental e o art. 14.";
     } else {
       hyp.className = "alert alert-err";
       hyp.innerHTML =
-        "<strong>Hipóteses objetivas de indeferimento:</strong><ul style='margin:.4rem 0 0 1.1rem'>" +
-        (av.hipoteses || []).map((h) => `<li>${esc(h.texto)}</li>`).join("") +
-        "</ul>";
+        "<strong>Prévia quantitativa:</strong> requisitos numéricos não atendidos. Sugestão de incisos do art. 14: <strong>" +
+        (av.sugestoesArt14 || []).join(", ") +
+        "</strong>. Marque no quadro abaixo (textos literais do decreto).";
+      if (av.sugestoesArt14?.length) applySugestoesHipoteses(av.sugestoesArt14);
     }
     hyp.classList.remove("hidden");
-
     $("btnParecer").disabled = false;
   }
 
@@ -219,16 +360,17 @@
     try {
       toast("Lendo PDF do requerimento…", "info");
       const data = await RSCParseRequerimento.parseRequerimentoPdf(file);
-      // default: leave pendente; user can bulk-accept
       state.req = data;
+      state.hipotesesSelecionadas = [];
       renderIdent();
       renderChecklist();
+      renderHipotesesDropdown();
       $("step2").classList.remove("hidden");
       $("step3").classList.remove("hidden");
       updateAvaliacao();
       checkImpedimento();
       toast(
-        `Extraídos ${data.itens.length} critério(s). Confira e marque o checklist.`,
+        `Extraídos ${data.itens.length} critério(s). Ajuste as quantidades aceitas se negar parte dos comprovantes.`,
         "ok"
       );
     } catch (e) {
@@ -238,14 +380,9 @@
   }
 
   function collectAssinantes() {
-    const com = RSCComissoes.getComissao(state.comissaoId);
-    if (!com) return [];
-    const tits = RSCComissoes.titulares(state.comissaoId);
-    const cbs = [...document.querySelectorAll(".signer-cb")];
-    return tits.filter((_, i) => {
-      const cb = cbs.find((c) => Number(c.getAttribute("data-i")) === i);
-      return cb ? cb.checked : true;
-    });
+    const id = state.comissaoId;
+    const membros = RSCComissoes.todosMembros(id);
+    return membros.filter((m) => state.signerChecked[m.siape]);
   }
 
   async function gerarParecer() {
@@ -254,29 +391,17 @@
     if (!state.numeroProcesso.trim())
       return toast("Informe o número do processo SIPAC.", "err");
 
-    // se ainda pendente, marcar todos ok para gerar (com aviso) — ou exigir marcação
-    const pend = state.req.itens.filter((i) => i.aceito === "pend");
-    if (pend.length === state.req.itens.length) {
-      // assume comprovados para teste
-      state.req.itens.forEach((i) => (i.aceito = "ok"));
-      renderChecklist();
-      updateAvaliacao();
-      toast("Itens estavam pendentes: marcados como comprovados para o teste.", "warn");
+    const av = RSCRegras.avaliar(state.req, itensParaAvaliacao());
+    if (!av.favoravel && !state.hipotesesSelecionadas.length) {
+      return toast(
+        "Parecer não favorável: marque ao menos um inciso do art. 14 (texto literal).",
+        "err"
+      );
     }
-
-    const av = RSCRegras.avaliar(
-      state.req,
-      state.req.itens.map((it) => ({
-        descricao: it.descricao,
-        pontosObtidos: it.aceito === "ok" ? Number(it.pontosObtidos) || 0 : 0,
-        grupo: it.grupo,
-        aceito: it.aceito,
-      }))
-    );
 
     const just =
       $("justificativa").value.trim() ||
-      (av.hipoteses || []).map((h) => h.texto).join(" ");
+      RSCRegras.textoJustificativa(state.hipotesesSelecionadas);
 
     const ctx = {
       req: state.req,
@@ -290,6 +415,7 @@
       assinantes: collectAssinantes(),
       avaliacao: av,
       justificativa: just,
+      hipotesesArt14: state.hipotesesSelecionadas,
       complexidadeDesc: av.nivel?.complexidadeDesc,
     };
 
@@ -312,9 +438,11 @@
 
   function bind() {
     fillUnidades();
+    renderHipotesesDropdown();
 
     $("selUnidade").addEventListener("change", (e) => {
       state.comissaoId = e.target.value;
+      state.signerChecked = {};
       renderSigners();
     });
     $("numProcesso").addEventListener("input", (e) => {
@@ -362,17 +490,31 @@
 
     $("btnAllOk").addEventListener("click", () => {
       if (!state.req) return;
-      state.req.itens.forEach((i) => (i.aceito = "ok"));
+      state.req.itens.forEach((i) => {
+        i.qtdAceita = i.qtdDeclarada ?? i.qtdAceita ?? 0;
+        i.aceito = Number(i.qtdAceita) > 0 ? "ok" : "no";
+      });
       renderChecklist();
       updateAvaliacao();
     });
     $("btnAllNo").addEventListener("click", () => {
       if (!state.req) return;
-      state.req.itens.forEach((i) => (i.aceito = "no"));
+      state.req.itens.forEach((i) => {
+        i.qtdAceita = 0;
+        i.aceito = "no";
+      });
       renderChecklist();
       updateAvaliacao();
     });
     $("btnParecer").addEventListener("click", gerarParecer);
+
+    // toggle painel hipóteses
+    const toggle = $("toggleHipoteses");
+    if (toggle) {
+      toggle.addEventListener("click", () => {
+        $("hipotesesPanel").classList.toggle("hidden");
+      });
+    }
   }
 
   document.addEventListener("DOMContentLoaded", bind);

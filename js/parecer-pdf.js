@@ -154,12 +154,16 @@
     gap(4);
     if (!fav) {
       text("Justificativa (caso Não Favorável):", { size: 10, bold: true });
-      const just =
-        ctx.justificativa ||
-        (ctx.avaliacao.hipoteses || []).map((h) => h.texto).join(" ") ||
-        "—";
+      const just = ctx.justificativa || "—";
       text(just, { size: 10, lh: 13 });
       gap(6);
+      if (ctx.hipotesesArt14 && ctx.hipotesesArt14.length) {
+        text(
+          "Incisos do art. 14 aplicados: " + ctx.hipotesesArt14.join(", ") + ".",
+          { size: 9 }
+        );
+        gap(4);
+      }
     } else {
       text("Justificativa (caso Não Favorável): —", { size: 10 });
       gap(4);

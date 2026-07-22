@@ -102,6 +102,12 @@
       const key = desc.slice(0, 80) + "|" + po;
       if (seen.has(key)) continue;
       seen.add(key);
+      let qtd = null;
+      if (pu && pu > 0 && po != null) {
+        qtd = Math.round((po / pu) * 1000) / 1000;
+        // inteiro quando quase inteiro
+        if (Math.abs(qtd - Math.round(qtd)) < 1e-6) qtd = Math.round(qtd);
+      }
       itens.push({
         grupo: inferGrupo(desc),
         n: Number(m[1]),
@@ -109,6 +115,8 @@
         unidade,
         pontosUnitario: pu,
         pontosObtidos: po,
+        qtdDeclarada: qtd,
+        qtdAceita: qtd, // comissão pode reduzir (parcial)
         aceito: "pend",
         obs: "",
       });

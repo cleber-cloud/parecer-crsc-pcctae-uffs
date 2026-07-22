@@ -53,8 +53,13 @@
           <input id="dataReq" type="date" />
         </div>
         <div>
-          <label for="anexoNum">Nº do anexo do parecer</label>
+          <label for="anexoNum">Nº do anexo do parecer (no título do documento)</label>
           <input id="anexoNum" type="text" value="I" placeholder="I, II, III…" />
+          <p class="muted small" style="margin:.35rem 0 0">
+            É o número romano do <strong>ANEXO</strong> no cabeçalho do parecer
+            (ex.: <em>ANEXO I - Parecer sobre Requerimento…</em>). Use I, II, III…
+            conforme a ordem dos pareceres no processo SIPAC — <strong>não</strong> é o anexo de comprovantes do servidor.
+          </p>
         </div>
         <div>
           <label for="vigencia">Vigência da concessão (se favorável)</label>
@@ -67,7 +72,10 @@
       </div>
       <div id="impedimentoAlert" class="alert alert-warn hidden" style="margin-top:1rem"></div>
       <div style="margin-top:1rem">
-        <label>Assinantes titulares (desmarque se ausente / impedido)</label>
+        <label>Assinantes da CRSC (titular e suplente por segmento)</label>
+        <p class="muted small" style="margin:.25rem 0 .5rem">
+          Marcar o <strong>titular</strong> desmarca o suplente do mesmo segmento; marcar o <strong>suplente</strong> desmarca o titular.
+        </p>
         <div id="signers" class="signers"></div>
       </div>
     </section>
@@ -85,10 +93,13 @@
 
     <section class="card hidden" id="step2">
       <h3>3. Checklist de critérios</h3>
-      <p class="muted small">Marque o que a comissão considera comprovado. A prévia recalcula pontos e hipóteses de indeferimento.</p>
+      <p class="muted small">
+        Ajuste a <strong>quantidade aceita</strong> (unidades comprovadas). Pontos aceitos = qtd aceita × pontos por unidade.
+        Assim você pode negar só parte dos comprovantes de um critério.
+      </p>
       <div class="btn-row" style="margin-top:0">
-        <button type="button" class="btn btn-secondary" id="btnAllOk">Marcar todos comprovados</button>
-        <button type="button" class="btn btn-secondary" id="btnAllNo">Marcar todos não comprovados</button>
+        <button type="button" class="btn btn-secondary" id="btnAllOk">Aceitar todas as quantidades</button>
+        <button type="button" class="btn btn-secondary" id="btnAllNo">Zerar todas as quantidades</button>
       </div>
       <div class="table-wrap" style="margin-top:1rem">
         <table class="checklist">
@@ -96,9 +107,11 @@
             <tr>
               <th>Grupo</th>
               <th>Critério específico</th>
-              <th>Unidade</th>
-              <th>Pts</th>
-              <th>Status</th>
+              <th>Unidade de medida</th>
+              <th>Pts/unid.</th>
+              <th>Qtd decl.</th>
+              <th>Qtd aceita</th>
+              <th>Pts aceitos</th>
               <th>Obs.</th>
             </tr>
           </thead>
@@ -111,9 +124,20 @@
       <h3>4. Análise e parecer</h3>
       <div id="metricsBox" class="metrics"></div>
       <div id="hipotesesBox" class="alert alert-info hidden" style="margin-top:1rem"></div>
+
+      <div style="margin-top:1.25rem">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem">
+          <label style="margin:0">Hipóteses de indeferimento — art. 14 do Decreto nº 13.048/2026 (texto literal)</label>
+          <button type="button" class="btn btn-secondary" id="toggleHipoteses">Mostrar / ocultar</button>
+        </div>
+        <div id="hipotesesPanel" class="hipoteses-panel">
+          <div id="hipotesesChecks"></div>
+        </div>
+      </div>
+
       <div style="margin-top:1rem">
-        <label for="justificativa">Justificativa (obrigatória se não favorável — pode editar)</label>
-        <textarea id="justificativa" placeholder="Preenchida automaticamente com hipóteses do decreto; edite se necessário."></textarea>
+        <label for="justificativa">Justificativa (obrigatória se não favorável — montada com os incisos marcados; pode editar)</label>
+        <textarea id="justificativa" placeholder="Marque os incisos do art. 14 acima para preencher o texto literal."></textarea>
       </div>
       <div class="btn-row">
         <button type="button" class="btn btn-primary" id="btnParecer" disabled>Gerar parecer PDF</button>

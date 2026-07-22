@@ -1,5 +1,6 @@
 /**
- * Regras RSC-PCCTAE (Decreto 13.048/2026 + tabela usada na calculadora UFFS).
+ * Regras RSC-PCCTAE (Decreto nº 13.048/2026).
+ * Hipóteses de indeferimento = texto literal do art. 14.
  */
 (function (global) {
   "use strict";
@@ -61,38 +62,77 @@
     },
   };
 
-  /** Hipóteses objetivas de indeferimento (catálogo) */
-  const HIPOTESES = {
-    PONTUACAO: {
-      codigo: "PONTUACAO_INSUFICIENTE",
+  /**
+   * Art. 14 do Decreto nº 13.048/2026 — critérios objetivos de indeferimento (texto literal).
+   * Prefixo comum do caput + cada inciso.
+   */
+  const CAPUT_ART14 =
+    "O RSC-PCCTAE poderá ser indeferido, ainda que atendidos os requisitos estabelecidos no art. 3º, com base na verificação do atendimento dos seguintes critérios objetivos:";
+
+  const HIPOTESES_ART14 = [
+    {
+      id: "I",
+      inciso: "I",
       texto:
-        "Pontuação obtida inferior à pontuação mínima exigida para o nível de RSC-PCCTAE requerido, nos termos do Decreto nº 13.048/2026.",
+        "I - obtenção da pontuação e atendimento da quantidade de critérios específicos e dos requisitos previstos no art. 5º, caput e § 1º;",
     },
-    ITENS: {
-      codigo: "CRITERIOS_INSUFICIENTES",
+    {
+      id: "II",
+      inciso: "II",
       texto:
-        "Quantidade de critérios específicos comprovados inferior ao mínimo exigido para o nível de RSC-PCCTAE requerido, nos termos do Decreto nº 13.048/2026.",
+        "II - utilização única de cada atividade ou experiência relativa ao critério específico apresentado, conforme o disposto no art. 5º, § 3º;",
     },
-    COMPLEXIDADE: {
-      codigo: "COMPLEXIDADE_AUSENTE",
+    {
+      id: "III",
+      inciso: "III",
+      texto: "III - comprovação documental, conforme o disposto no art. 4º;",
+    },
+    {
+      id: "IV",
+      inciso: "IV",
       texto:
-        "Não comprovado o requisito de complexidade do nível pretendido (item pertencente ao(s) grupo(s) exigido(s) pelo Decreto nº 13.048/2026).",
+        "IV - cumprimento do interstício de três anos, contado da data da última concessão, conforme o disposto no art. 11;",
     },
-    DOCUMENTACAO: {
-      codigo: "DOCUMENTACAO_INSUFICIENTE",
+    {
+      id: "V",
+      inciso: "V",
       texto:
-        "Documentação comprobatória insuficiente ou inadequada para demonstrar os saberes e competências declarados (art. 13, III, do Decreto nº 13.048/2026).",
+        "V - cumprimento do estágio probatório, conforme o disposto no art. 12;",
     },
-    INSTRUCAO: {
-      codigo: "INSTRUCAO_INCOMPLETA",
+    {
+      id: "VI",
+      inciso: "VI",
       texto:
-        "Processo com instrução incompleta (requerimento, memorial ou comprovantes), devendo ser sanado mediante diligência antes do julgamento de mérito, nos termos do Regimento da CRSC-PCCTAE/UFFS.",
+        "VI - realização de atividades e experiências exclusivamente no exercício do cargo ocupado, conforme o disposto no art. 12, parágrafo único;",
     },
-  };
+    {
+      id: "VII",
+      inciso: "VII",
+      texto:
+        "VII - instrução do requerimento, conforme a documentação prevista no art. 13;",
+    },
+    {
+      id: "VIII",
+      inciso: "VIII",
+      texto:
+        "VIII - apresentação do memorial, conforme o disposto no art. 13, caput, inciso II;",
+    },
+    {
+      id: "IX",
+      inciso: "IX",
+      texto:
+        "IX - demonstração de desenvolvimento de saberes, competências, inovação, ampliação de responsabilidades ou obtenção de resultados institucionais relevantes, conforme o disposto no art. 15; e",
+    },
+    {
+      id: "X",
+      inciso: "X",
+      texto:
+        "X - observância do percentual máximo de concessão e da disponibilidade orçamentária estabelecidos no art. 12-C, § 1º, da Lei nº 11.091, de 12 de janeiro de 2005.",
+    },
+  ];
 
   function grupoDoCriterio(textoOuId) {
     const s = String(textoOuId || "");
-    // "Critério I - ..." or "I.3" or starts with roman in description context
     const m1 = s.match(/Crit[eé]rio\s+(I{1,3}|IV|V|VI)\b/i);
     if (m1) return m1[1].toUpperCase();
     const m2 = s.match(/\b(I{1,3}|IV|V|VI)\.\d/);
@@ -101,43 +141,45 @@
   }
 
   /**
-   * Avalia com base nos itens aceitos pela comissão.
-   * @param {object} req dados extraídos do requerimento
-   * @param {Array} itensAceitos [{descricao, pontosObtidos, grupo, aceito:boolean}]
+   * @param {object} req
+   * @param {Array} itens [{grupo, pontosAceitos, qtdAceita, aceito}]
+   *   pontosAceitos = quantidade aceita × pontos por unidade
+   *   critério conta se qtdAceita > 0
    */
-  function avaliar(req, itensAceitos) {
+  function avaliar(req, itens) {
     const nivelId = (req.nivelRsc || "").replace(/RSC-PCCTAE\s*/i, "").trim().toUpperCase();
     const nivel = NIVEIS[nivelId] || null;
-    const aceitos = (itensAceitos || []).filter((i) => i.aceito !== false && i.aceito !== "no");
-    const pontos = aceitos.reduce((s, i) => s + (Number(i.pontosObtidos) || 0), 0);
-    const qtd = aceitos.length;
+
+    const comPontos = (itens || []).filter((i) => (Number(i.pontosAceitos) || 0) > 0);
+    const pontos = comPontos.reduce((s, i) => s + (Number(i.pontosAceitos) || 0), 0);
+    const qtd = comPontos.length;
     const grupos = new Set(
-      aceitos.map((i) => i.grupo || grupoDoCriterio(i.requisito || i.descricao)).filter(Boolean)
+      comPontos.map((i) => i.grupo || grupoDoCriterio(i.descricao)).filter(Boolean)
     );
 
-    const hipoteses = [];
+    /** Sugestões automáticas de incisos do art. 14 (ids) */
+    const sugestoes = [];
     let complexidadeOk = true;
     if (nivel && nivel.complexidade && nivel.complexidade.length) {
       complexidadeOk = nivel.complexidade.some((g) => grupos.has(g));
-      if (!complexidadeOk) hipoteses.push(HIPOTESES.COMPLEXIDADE);
+      if (!complexidadeOk) sugestoes.push("I"); // art. 5º requisitos
     }
     if (nivel) {
-      if (pontos + 1e-9 < nivel.minPontos) hipoteses.push(HIPOTESES.PONTUACAO);
-      if (qtd < nivel.minItens) hipoteses.push(HIPOTESES.ITENS);
+      if (pontos + 1e-9 < nivel.minPontos) sugestoes.push("I");
+      if (qtd < nivel.minItens) sugestoes.push("I");
+    }
+    // se algum item com 0 pontos por recusa documental
+    if ((itens || []).some((i) => i.aceito === "no" || (Number(i.qtdAceita) || 0) === 0 && (Number(i.qtdDeclarada) || 0) > 0)) {
+      sugestoes.push("III");
     }
 
-    // se algum item marcado como recusado por documentação e não há outra hipótese
-    const docFail = (itensAceitos || []).some((i) => i.aceito === "no");
-    if (docFail && hipoteses.length === 0) {
-      // pode ainda passar matematicamente; não força indeferimento automático
-    }
-    if (docFail && (pontos + 1e-9 < (nivel?.minPontos || 0) || qtd < (nivel?.minItens || 0))) {
-      if (!hipoteses.find((h) => h.codigo === HIPOTESES.DOCUMENTACAO.codigo)) {
-        hipoteses.push(HIPOTESES.DOCUMENTACAO);
-      }
-    }
+    const uniqueSug = [...new Set(sugestoes)];
+    const favoravel =
+      nivel &&
+      pontos + 1e-9 >= nivel.minPontos &&
+      qtd >= nivel.minItens &&
+      complexidadeOk;
 
-    const favoravel = nivel && hipoteses.length === 0;
     const saldo = nivel ? Math.max(0, pontos - nivel.minPontos) : 0;
 
     return {
@@ -148,7 +190,7 @@
       grupos: [...grupos],
       complexidadeOk,
       favoravel,
-      hipoteses,
+      sugestoesArt14: uniqueSug,
       saldoPontuacao: Math.round(saldo * 10) / 10,
       minPontos: nivel ? nivel.minPontos : null,
       minItens: nivel ? nivel.minItens : null,
@@ -156,5 +198,19 @@
     };
   }
 
-  global.RSCRegras = { NIVEIS, HIPOTESES, avaliar, grupoDoCriterio };
+  function textoJustificativa(incisosIds) {
+    const ids = incisosIds || [];
+    if (!ids.length) return "";
+    const partes = HIPOTESES_ART14.filter((h) => ids.includes(h.id)).map((h) => h.texto);
+    return CAPUT_ART14 + " " + partes.join(" ");
+  }
+
+  global.RSCRegras = {
+    NIVEIS,
+    CAPUT_ART14,
+    HIPOTESES_ART14,
+    avaliar,
+    grupoDoCriterio,
+    textoJustificativa,
+  };
 })(typeof window !== "undefined" ? window : globalThis);

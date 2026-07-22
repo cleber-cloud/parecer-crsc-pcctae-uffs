@@ -199,11 +199,29 @@ footer.app-footer{
 footer.app-footer .wrap{max-width:1100px;margin:0 auto}
 footer.app-footer a{color:#fff}
 .hidden{display:none!important}
-.signers{display:grid;gap:.5rem}
-.signer{
-  display:flex;align-items:center;gap:.6rem;
-  padding:.55rem .7rem;border:1px solid #d8e2dc;border-radius:10px;background:#fafcfb;
+.signers{display:grid;gap:.85rem}
+.signer-pair{
+  border:1px solid #d8e2dc;border-radius:12px;padding:.65rem .75rem;background:#fafcfb;
 }
-.signer input{width:auto}
+.signer-pair-row{
+  display:grid;grid-template-columns:1fr 1fr;gap:.5rem;
+}
+@media(max-width:700px){.signer-pair-row{grid-template-columns:1fr}}
+.signer{
+  display:flex;align-items:flex-start;gap:.6rem;
+  padding:.55rem .7rem;border:1px solid #d8e2dc;border-radius:10px;background:#fff;
+}
+.signer input{width:auto;margin-top:.2rem}
+.hipoteses-panel{
+  margin-top:.65rem;max-height:280px;overflow:auto;
+  border:1px solid #d8e2dc;border-radius:12px;padding:.65rem .75rem;background:#fafcfb;
+}
+.hipoteses-panel.hidden{display:none!important}
+.hip-item{align-items:flex-start;margin-bottom:.4rem}
+.hip-item span{line-height:1.35}
+table.checklist .num{text-align:right;white-space:nowrap}
+table.checklist input[type=number]{
+  padding:.35rem .4rem;font-size:.85rem;background:#fff;
+}
 .small{font-size:.8rem}
-textarea{min-height:90px;resize:vertical}
+textarea{min-height:110px;resize:vertical}
