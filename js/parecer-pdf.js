@@ -250,12 +250,6 @@
       align: "center",
       lh: 14,
     });
-    text(`Servidor(a): ${(ctx.req && ctx.req.nome) || "—"}`, {
-      size: 11,
-      bold: true,
-      align: "center",
-      lh: 14,
-    });
     gap(12);
     line();
 
@@ -568,12 +562,6 @@
     });
     gap(4);
     text(`Processo: ${proc}`, {
-      size: 11,
-      bold: true,
-      align: "center",
-      lh: 14,
-    });
-    text(`Servidor(a): ${(ctx.req && ctx.req.nome) || "—"}`, {
       size: 11,
       bold: true,
       align: "center",
