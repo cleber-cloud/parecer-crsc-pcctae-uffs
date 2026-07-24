@@ -648,6 +648,10 @@
       "Devolve-se o processo ao(à) servidor(a) interessado(a) para cumprimento da diligência, com posterior retorno à CRSC-PCCTAE para continuidade da análise do requerimento de RSC-PCCTAE.",
       { size: 10, lh: 13 }
     );
+    text(
+      "Observação: Todos os documentos adicionais devem ser incluídos na sequência e dentro deste mesmo processo. Nenhum documento anterior deve ser cancelado.",
+      { size: 9, lh: 12, color: rgb(0.8, 0.05, 0.05) }
+    );
     gap(14);
 
     sec++;

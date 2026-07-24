@@ -37,7 +37,7 @@
     );
     // "Nome : valor" -> "Nome: valor"
     t = t.replace(
-      /^(Nome|SIAPE|Cargo|Data de ingresso(?: em IFE)?|Lota[cç][aã]o|E-mail|Fun[cç][aã]o[^:]*)\s*:\s*/i,
+      /^(Nome|SIAPE|Cargo|Data de ingresso(?: em IFE)?|Data de in[ií]cio do exerc[ií]cio no cargo atual|Lota[cç][aã]o|E-mail|Fun[cç][aã]o[^:]*)\s*:\s*/i,
       (_, lab) => lab.replace(/\s+/g, " ").trim() + ": "
     );
     t = t.replace(/\s*:\s*/g, (m, offset, str) => {
@@ -386,7 +386,7 @@
       else if ((m = ln.match(/^Cargo:\s*(.+)$/i))) out.cargo = clean(m[1]);
       else if (
         (m = ln.match(
-          /^Data de ingresso(?: em IFE)?:\s*(\d{2}\/\d{2}\/\d{4})/i
+          /^Data de (?:ingresso(?: em IFE)?|in[ií]cio do exerc[ií]cio no cargo atual):\s*(\d{2}\/\d{2}\/\d{4})/i
         ))
       )
         out.dataIngresso = m[1];
