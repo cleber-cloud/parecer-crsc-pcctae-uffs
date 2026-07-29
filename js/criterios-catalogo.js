@@ -109,6 +109,21 @@ window.RSC_NIVEIS = [{"id":"I","name":"RSC-PCCTAE I","equivalence":"Ensino Fund.
   function matchCriterionId(item) {
     const ordem = global.RSC_CRITERIOS_ORDEM || [];
     const meta = global.RSC_CRITERIOS_META || {};
+
+    // PDF Assistente RSC / catálogo já traz o ID (I.3, V.2.s…)
+    const rawId = String(item.criterionId || item.id || "").trim();
+    if (rawId) {
+      const m = rawId.match(/^(I{1,3}|IV|V|VI)\.(\d+)(?:\.([ts]))?$/i);
+      if (m) {
+        const id =
+          m[1].toUpperCase() +
+          "." +
+          m[2] +
+          (m[3] ? "." + m[3].toLowerCase() : "");
+        if (meta[id]) return { id, score: 100 };
+      }
+    }
+
     let bestId = null;
     let best = 0;
     for (const id of ordem) {

@@ -85,7 +85,27 @@
     if (/^-\s*Tenho ci[eê]ncia/i.test(s)) return true;
     if (/^À vista das informa/i.test(s)) return true;
     if (/^Nome:\s*$/i.test(s) || /^SIAPE:\s*$/i.test(s)) return true;
+    if (/^ITEM$/i.test(s)) return true;
+    if (/^CRIT[EÉ]RIO ESPEC[IÍ]FICO$/i.test(s)) return true;
+    if (/^UNIDADE$/i.test(s)) return true;
+    if (/^PONTOS$/i.test(s)) return true;
+    if (/^OBTIDA$/i.test(s)) return true;
+    if (/^Itens organizados conforme/i.test(s)) return true;
+    if (/via Assistente RSC/i.test(s)) return true;
     return false;
+  }
+
+  /** ID de critério no formato do catálogo / Assistente RSC (I.3, II.11, V.2.s). */
+  function isCriterionIdLine(s) {
+    return /^(I{1,3}|IV|V|VI)\.\d+(?:\.[ts])?$/i.test(clean(s));
+  }
+
+  function normalizeCriterionId(s) {
+    const t = clean(s);
+    const m = t.match(/^(I{1,3}|IV|V|VI)\.(\d+)(?:\.([ts]))?$/i);
+    if (!m) return "";
+    const base = m[1].toUpperCase() + "." + m[2];
+    return m[3] ? base + "." + m[3].toLowerCase() : base;
   }
 
   async function extractPdfLines(fileOrArrayBuffer) {
@@ -173,23 +193,28 @@
     "gi"
   );
 
-  function pushItem(itens, seen, n, desc, unidade, pu, po) {
+  function pushItem(itens, seen, n, desc, unidade, pu, po, criterionId) {
     desc = clean(desc);
     unidade = clean(unidade);
     if (/^Por ano ou fra/i.test(unidade) && !/seis meses/i.test(unidade)) {
       unidade = "Por ano ou fração acima de seis meses";
     }
-    if (po == null || !pu || desc.length < 15) return;
+    const id = criterionId ? normalizeCriterionId(criterionId) : "";
+    // com ID explícito do catálogo, aceita descrição um pouco mais curta
+    if (po == null || !pu || (!id && desc.length < 15) || (id && desc.length < 8))
+      return;
     if (/declaro|fatos apresentados|responsabilidade administrativa/i.test(desc))
       return;
-    const key = desc.slice(0, 90) + "|" + po + "|" + pu;
+    const key = (id || desc.slice(0, 90)) + "|" + po + "|" + pu;
     if (seen.has(key)) return;
     seen.add(key);
     let qtd = Math.round((po / pu) * 1000) / 1000;
     if (Math.abs(qtd - Math.round(qtd)) < 1e-6) qtd = Math.round(qtd);
+    const grupoFromId = id ? String(id).split(".")[0].toUpperCase() : null;
     itens.push({
-      grupo: inferGrupo(desc),
+      grupo: grupoFromId || inferGrupo(desc),
       n: n,
+      criterionId: id || null,
       descricao: desc,
       unidade,
       pontosUnitario: pu,
@@ -202,12 +227,116 @@
   }
 
   /**
+   * Formato Assistente RSC / catálogo: ID (I.3, V.2.s) + descrição multilinha +
+   * unidade + pts/unid. + pontos obtidos (em linhas separadas ou na mesma).
+   * Compatível com o layout do PDF "01 - Requerimento_RSC.pdf".
+   */
+  function parseItensByCriterionIds(lines) {
+    const usable = (lines || [])
+      .map(normalizeLine)
+      .filter((l) => l && !isNoiseLine(l));
+    const itens = [];
+    const seen = new Set();
+    const ID_RE = /^(I{1,3}|IV|V|VI)\.\d+(?:\.[ts])?$/i;
+
+    for (let i = 0; i < usable.length; i++) {
+      if (!ID_RE.test(usable[i])) continue;
+      const id = normalizeCriterionId(usable[i]);
+      if (!id) continue;
+
+      const descParts = [];
+      let unidade = "";
+      let pu = null;
+      let po = null;
+      let j = i + 1;
+
+      while (j < usable.length) {
+        const L = usable[j];
+        if (ID_RE.test(L)) break;
+        if (/^Subtotal/i.test(L)) break;
+        if (/^TOTAL\s*\(/i.test(L)) break;
+        if (/^Crit[eé]rio\s+(I{1,3}|IV|V|VI)\b/i.test(L)) break;
+        if (/^À vista das informa/i.test(L)) break;
+        if (/^4\.\s*DECLARA/i.test(L)) break;
+
+        // "Por designação 3,0 9,0" na mesma linha
+        const scoredSame = L.match(
+          /^(Por\s+.+?)\s+(\d{1,3}(?:[.,]\d{1,2})?)\s+(\d{1,3}(?:[.,]\d{1,2})?)\s*$/i
+        );
+        if (scoredSame) {
+          unidade = scoredSame[1];
+          pu = parseNumberBR(scoredSame[2]);
+          po = parseNumberBR(scoredSame[3]);
+          j++;
+          break;
+        }
+
+        if (/^Por\s+/i.test(L)) {
+          unidade = L;
+          j++;
+          // "de seis meses" / "acima de seis meses" na linha seguinte
+          while (
+            j < usable.length &&
+            /^(de|acima de)\s+/i.test(usable[j]) &&
+            !/^[\d.,]+$/.test(usable[j]) &&
+            !ID_RE.test(usable[j])
+          ) {
+            unidade = clean(unidade + " " + usable[j]);
+            j++;
+          }
+          if (j < usable.length && /^[\d.,]+$/.test(usable[j])) {
+            pu = parseNumberBR(usable[j]);
+            j++;
+          }
+          if (j < usable.length && /^[\d.,]+$/.test(usable[j])) {
+            po = parseNumberBR(usable[j]);
+            j++;
+          }
+          break;
+        }
+
+        // números soltos sem unidade ainda → acumulam na descrição só se não parecerem scores
+        if (/^[\d.,]+$/.test(L)) {
+          j++;
+          continue;
+        }
+        descParts.push(L);
+        j++;
+      }
+
+      const desc = clean(descParts.join(" "));
+      const numMatch = id.match(/^[IVX]+\.(\d+)/i);
+      const n = numMatch ? Number(numMatch[1]) : null;
+      pushItem(itens, seen, n, desc, unidade, pu, po, id);
+      i = Math.max(i, j - 1);
+    }
+    return itens;
+  }
+
+  /**
    * Extrai itens:
-   * - linha completa: "N desc Por unidade X,X Y,Y"
+   * - formato Assistente RSC com IDs I.3 / V.2.s (novo)
+   * - linha completa: "N desc Por unidade X,X Y,Y" (calculadora antiga)
    * - descrição multilinha: pontos na 1ª linha; continuações logo abaixo
    * - vários itens colados na mesma linha (alguns PDFs da calculadora)
    */
   function parseItensFromLines(lines) {
+    const byId = parseItensByCriterionIds(lines);
+    const classic = parseItensClassicFromLines(lines);
+    if (byId.length && !classic.length) return byId;
+    if (classic.length && !byId.length) return classic;
+    if (byId.length && classic.length) {
+      const sum = (arr) =>
+        arr.reduce((s, i) => s + (Number(i.pontosObtidos) || 0), 0);
+      // preferir formato com IDs se capturou bem (mais itens ou soma semelhante/maior)
+      if (byId.length >= classic.length || sum(byId) + 0.05 >= sum(classic))
+        return byId;
+      return classic;
+    }
+    return classic;
+  }
+
+  function parseItensClassicFromLines(lines) {
     const usable = lines.filter((l) => !isNoiseLine(l));
     const itens = [];
     const seen = new Set();
@@ -377,22 +506,56 @@
       email: "",
     };
 
-    // Preferir linhas com rótulos ("Nome:" ou "Nome :")
-    for (const raw of lines) {
-      const ln = normalizeLine(raw);
+    const normAll = (lines || []).map(normalizeLine).filter(Boolean);
+
+    // Preferir linhas com rótulos ("Nome:" ou "Nome :") — valor na mesma linha
+    // ou na linha seguinte (layout Assistente RSC / HTML impresso).
+    for (let i = 0; i < normAll.length; i++) {
+      const ln = normAll[i];
+      const next = normAll[i + 1] || "";
       let m;
       if ((m = ln.match(/^Nome:\s*(.+)$/i))) out.nome = clean(m[1]);
+      else if (/^Nome:\s*$/i.test(ln) && next && !/:$/.test(next) && !/^\d{5,8}$/.test(next))
+        out.nome = clean(next);
       else if ((m = ln.match(/^SIAPE:\s*(\d{5,8})/i))) out.siape = m[1];
+      else if (/^SIAPE:\s*$/i.test(ln) && /^\d{5,8}$/.test(next)) out.siape = next;
       else if ((m = ln.match(/^Cargo:\s*(.+)$/i))) out.cargo = clean(m[1]);
+      else if (/^Cargo:\s*$/i.test(ln) && next && !/:$/.test(next))
+        out.cargo = clean(next);
       else if (
         (m = ln.match(
           /^Data de (?:ingresso(?: em IFE)?|in[ií]cio do exerc[ií]cio no cargo atual):\s*(\d{2}\/\d{2}\/\d{4})/i
         ))
       )
         out.dataIngresso = m[1];
+      else if (
+        /^Data de (?:ingresso|in[ií]cio)/i.test(ln) &&
+        /:\s*$/.test(ln) &&
+        /^\d{2}\/\d{2}\/\d{4}$/.test(next)
+      )
+        out.dataIngresso = next;
       else if ((m = ln.match(/^Lota[cç][aã]o:\s*(.+)$/i))) out.lotacao = clean(m[1]);
-      else if ((m = ln.match(/^E-?mail:\s*(.+)$/i))) {
+      else if (/^Lota[cç][aã]o:\s*$/i.test(ln) && next && !/:$/.test(next) && !/^X$/i.test(next)) {
+        // lotação pode ocupar 2 linhas (ex.: Superintendência … / Universitária)
+        let lot = clean(next);
+        const n2 = normAll[i + 2] || "";
+        if (
+          n2 &&
+          !/:$/.test(n2) &&
+          !/^Fun[cç][aã]o/i.test(n2) &&
+          !/^E-?mail/i.test(n2) &&
+          !/@/.test(n2) &&
+          !/^RSC/i.test(n2) &&
+          !isCriterionIdLine(n2) &&
+          n2.length < 60
+        ) {
+          lot = clean(lot + " " + n2);
+        }
+        out.lotacao = lot;
+      } else if ((m = ln.match(/^E-?mail:\s*(.+)$/i))) {
         out.email = clean(m[1]).replace(/\s+/g, "");
+      } else if (/^E-?mail:\s*$/i.test(ln) && /@/.test(next)) {
+        out.email = clean(next).replace(/\s+/g, "");
       } else if ((m = ln.match(/([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i))) {
         if (!out.email) out.email = m[1];
       }
