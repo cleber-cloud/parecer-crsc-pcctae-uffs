@@ -445,17 +445,23 @@
     gap(8);
     line();
     text(
-      "Este anexo é material de apoio à comissão. Resume o que o(a) servidor(a) declarou, o que a comissão aceitou e eventuais ressalvas (observações ou diligências) por critério específico do RSC-PCCTAE, conforme legislação aplicável.",
+      "Este anexo é material de apoio à comissão. Resume o que o(a) servidor(a) declarou, o que a comissão aceitou e eventuais ressalvas (observações ou diligências) por critério específico, além de diligências e observações do memorial e da diligência geral, conforme legislação aplicável.",
       { size: 9, lh: 12 }
     );
     gap(10);
 
     const rel = ctx.itensRelatorio || [];
+    const memDil = (ctx.memorialDiligencia || "").trim();
+    const memObs = (ctx.memorialObservacao || "").trim();
+    const dilGeralAnexo = (ctx.diligenciaGeral || "").trim();
+    const hasComplementares = !!(memDil || memObs || dilGeralAnexo);
+
     if (!rel.length) {
       text(
         "Nenhum critério com quantidade, observação ou diligência para listar.",
         { size: 10 }
       );
+      gap(8);
     } else {
       const order = ["I", "II", "III", "IV", "V", "VI"];
       order.forEach((g) => {
@@ -500,8 +506,39 @@
         "Total de pontos aceitos neste relatório: ",
         String(Math.round(somaAceita * 10) / 10)
       );
+      gap(10);
     }
-    gap(10);
+
+    if (hasComplementares) {
+      text("Diligências e observações complementares", {
+        size: 11,
+        bold: true,
+      });
+      gap(6);
+      if (memDil) {
+        ensure(50);
+        text("Diligência sobre o memorial:", { size: 10, bold: true });
+        text(memDil, { size: 10, lh: 13 });
+        gap(8);
+      }
+      if (memObs) {
+        ensure(50);
+        text("Observação sobre o memorial:", { size: 10, bold: true });
+        text(memObs, { size: 10, lh: 13 });
+        gap(8);
+      }
+      if (dilGeralAnexo) {
+        ensure(50);
+        text("Diligência geral (sem vínculo a critérios específicos):", {
+          size: 10,
+          bold: true,
+        });
+        text(dilGeralAnexo, { size: 10, lh: 13 });
+        gap(8);
+      }
+    }
+
+    gap(4);
     text(
       "Fim do anexo — relatório auxiliar.",
       { size: 8, color: rgb(0.4, 0.4, 0.4) }
@@ -583,6 +620,7 @@
 
     const itens = ctx.itensDiligencia || [];
     const dilGeral = (ctx.diligenciaGeral || "").trim();
+    const dilMemorial = (ctx.memorialDiligencia || "").trim();
     let sec = 2;
 
     if (itens.length) {
@@ -618,6 +656,22 @@
       gap(6);
     }
 
+    if (dilMemorial) {
+      text(`${sec}. Diligência sobre o memorial`, {
+        size: 12,
+        bold: true,
+      });
+      gap(4);
+      text(
+        "A Comissão solicita o seguinte esclarecimento ou complementação referente ao memorial apresentado:",
+        { size: 10, lh: 13 }
+      );
+      gap(6);
+      text(dilMemorial, { size: 10, lh: 13, bold: true });
+      sec++;
+      gap(10);
+    }
+
     if (dilGeral) {
       text(`${sec}. Diligência geral`, {
         size: 12,
@@ -634,7 +688,7 @@
       gap(10);
     }
 
-    if (!itens.length && !dilGeral) {
+    if (!itens.length && !dilGeral && !dilMemorial) {
       text("2. Conteúdo da diligência", { size: 12, bold: true });
       gap(4);
       text("Nenhuma diligência registrada.", { size: 10 });

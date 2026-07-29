@@ -169,8 +169,18 @@ input:focus,select:focus,textarea:focus{
   justify-content:space-between;
   align-items:center;
 }
-.btn-row-split #btnGerarDiligencia{
-  margin-left:auto;
+.btn-row-dil-geral{
+  justify-content:flex-start;
+  margin-top:1rem;
+}
+.btn-row-gerar-diligencia{
+  justify-content:center;
+  margin-top:1.25rem;
+}
+.btn-row-gerar-diligencia #btnGerarDiligencia{
+  min-width:16rem;
+  padding:.8rem 1.35rem;
+  font-size:1rem;
 }
 .btn-diligencia-gerar{
   background:linear-gradient(180deg,#d97706 0%,#b45309 100%);
@@ -357,6 +367,24 @@ table.checklist .small{font-size:.78rem}
 .memorial-option.selected .memorial-check{visibility:visible}
 .memorial-option.selected.memorial-ok{background:#dcfce7;border-color:#34a853;color:#166534}
 .memorial-option.selected.memorial-no{background:#fee2e2;border-color:#ef4444;color:#b91c1c}
+.memorial-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.55rem;
+  margin-top:1rem;
+}
+.memorial-panel{
+  grid-column:auto;
+  max-width:100%;
+}
+.memorial-panel textarea{
+  width:100%;
+  min-height:72px;
+  margin:.4rem 0 .55rem;
+  border-radius:12px;
+  background:#fff;
+  box-sizing:border-box;
+}
 .alert{
   border-radius:12px;
   padding:.85rem 1rem;
@@ -571,13 +599,44 @@ table.checklist input[type=number]{
 .small{font-size:.8rem}
 textarea{min-height:110px;resize:vertical}
 
-/* Datas de diligência no cabeçalho */
+/* Houve diligências + datas (seção 5) — datas com revelação suave */
+.diligencia-houve-block{
+  margin-top:1.25rem;
+}
+.diligencia-houve-chk input[type=checkbox]{
+  margin-top:.2rem;
+  flex-shrink:0;
+}
 .diligencia-datas{
-  margin-top:1rem;
-  padding:1rem 1.1rem;
-  border:1px solid #fde68a;
+  display:grid;
+  grid-template-rows:0fr;
+  opacity:0;
+  margin-top:0;
+  border:1px solid transparent;
   border-radius:14px;
+  background:transparent;
+  transition:
+    grid-template-rows .32s ease,
+    opacity .28s ease,
+    margin-top .28s ease,
+    border-color .28s ease,
+    background .28s ease,
+    padding .28s ease;
+  padding:0 1.1rem;
+  pointer-events:none;
+}
+.diligencia-datas-inner{
+  overflow:hidden;
+  min-height:0;
+}
+.diligencia-datas.is-open{
+  grid-template-rows:1fr;
+  opacity:1;
+  margin-top:.85rem;
+  padding:1rem 1.1rem;
+  border-color:#fde68a;
   background:#fffbeb;
+  pointer-events:auto;
 }
 
 /* Identificação editável + confirmação texto×OCR */

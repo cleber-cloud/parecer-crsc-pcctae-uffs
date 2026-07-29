@@ -24,6 +24,11 @@
     dataRetornoDiligencia: "",
     vigencia: "",
     memorialFavoravel: true,
+    /** diligência / observação sobre o memorial (seção 4) */
+    memorialDiligencia: "",
+    memorialObservacao: "",
+    memorialDiligenciaOpen: false,
+    memorialObsOpen: false,
     hipotesesSelecionadas: [],
     /** @type {Record<string, boolean>} chave siape → marcado */
     signerChecked: {},
@@ -146,11 +151,32 @@
     return iso;
   }
 
+  /**
+   * Checkbox "Houve diligências" sempre visível; datas revelam/ocultam suavemente.
+   */
   function syncDiligenciaDatasUI() {
     const box = $("diligenciaDatas");
-    if (!box) return;
-    if (state.diligencias) box.classList.remove("hidden");
-    else box.classList.add("hidden");
+    const on = !!state.diligencias;
+    if ($("chkDiligencias")) $("chkDiligencias").checked = on;
+    if (box) {
+      box.classList.toggle("is-open", on);
+      box.setAttribute("aria-hidden", on ? "false" : "true");
+    }
+    if ($("dataEnvioDil"))
+      $("dataEnvioDil").value = toIsoDate(state.dataEnvioDiligencia) || "";
+    if ($("dataRetornoDil"))
+      $("dataRetornoDil").value = toIsoDate(state.dataRetornoDiligencia) || "";
+  }
+
+  /** Após gerar PDF de diligência: marca "Houve diligências" e data de envio = hoje. */
+  function markHouveDiligenciasAposGerar() {
+    const hoje = todayISO();
+    state.diligencias = true;
+    state.dataEnvioDiligencia = hoje;
+    if ($("chkDiligencias")) $("chkDiligencias").checked = true;
+    if ($("dataEnvioDil")) $("dataEnvioDil").value = hoje;
+    syncDiligenciaDatasUI();
+    scheduleAutosave();
   }
 
   function countDiligencias() {
@@ -158,27 +184,36 @@
       (i) => i.diligencia && i.diligencia.texto
     ).length;
     const geral = !!(state.diligenciaGeral && state.diligenciaGeral.trim());
-    return { nItens, geral, total: nItens + (geral ? 1 : 0) };
+    const memorial = !!(
+      state.memorialDiligencia && state.memorialDiligencia.trim()
+    );
+    return {
+      nItens,
+      geral,
+      memorial,
+      total: nItens + (geral ? 1 : 0) + (memorial ? 1 : 0),
+    };
   }
 
   function updateDiligenciaBtn() {
     const btn = $("btnGerarDiligencia");
     if (!btn) return;
-    const { nItens, geral, total } = countDiligencias();
+    const { nItens, geral, memorial, total } = countDiligencias();
     btn.disabled = !state.req || total === 0;
     const parts = [];
     if (nItens) parts.push(`${nItens} item(ns)`);
     if (geral) parts.push("geral");
+    if (memorial) parts.push("memorial");
     btn.textContent =
       total > 0
-        ? `Gerar diligência (PDF) · ${parts.join(" + ")}`
-        : "Gerar diligência (PDF)";
+        ? `Gerar Diligência · ${parts.join(" + ")}`
+        : "Gerar Diligência";
     const btnG = $("btnDilGeral");
     if (btnG) {
       btnG.disabled = !state.req;
       btnG.textContent = geral
         ? "Editar diligência geral"
-        : "Inserir diligência sem vínculo a critérios";
+        : "Inserir uma diligência geral";
       btnG.classList.toggle("btn-primary", geral || state.diligenciaGeralOpen);
       btnG.classList.toggle("btn-secondary", !(geral || state.diligenciaGeralOpen));
     }
@@ -530,6 +565,71 @@
     btnNo.classList.toggle("selected", !favoravel);
     btnOk.setAttribute("aria-pressed", favoravel ? "true" : "false");
     btnNo.setAttribute("aria-pressed", favoravel ? "false" : "true");
+
+    const dilTxt = (state.memorialDiligencia || "").trim();
+    const obsTxt = (state.memorialObservacao || "").trim();
+    const dilOpen = !!state.memorialDiligenciaOpen;
+    const obsOpen = !!state.memorialObsOpen;
+
+    const btnDil = $("btnMemorialDil");
+    const btnObs = $("btnMemorialObs");
+    if (btnDil) {
+      btnDil.classList.toggle("active", !!dilTxt || dilOpen);
+      const ico = btnDil.querySelector(".chip-ico");
+      if (ico) ico.textContent = dilTxt ? "✎" : "⚑";
+      btnDil.title = dilTxt
+        ? "Editar diligência sobre o memorial"
+        : "Diligência sobre o memorial";
+    }
+    if (btnObs) {
+      btnObs.classList.toggle("active", !!obsTxt || obsOpen);
+      const ico = btnObs.querySelector(".chip-ico");
+      if (ico) ico.textContent = obsTxt ? "✎" : "💬";
+      btnObs.title = obsTxt
+        ? "Editar observação sobre o memorial"
+        : "Observação sobre o memorial";
+    }
+
+    const dilPanel = $("memorialDilPanel");
+    const obsPanel = $("memorialObsPanel");
+    const dilTa = $("memorialDilTxt");
+    const obsTa = $("memorialObsTxt");
+    if (dilPanel) dilPanel.classList.toggle("hidden", !dilOpen);
+    if (obsPanel) obsPanel.classList.toggle("hidden", !obsOpen);
+    if (dilOpen && dilTa && document.activeElement !== dilTa) {
+      dilTa.value = state.memorialDiligencia || "";
+    }
+    if (obsOpen && obsTa && document.activeElement !== obsTa) {
+      obsTa.value = state.memorialObservacao || "";
+    }
+
+    const dilSaved = $("memorialDilSaved");
+    const obsSaved = $("memorialObsSaved");
+    if (dilSaved) {
+      if (dilTxt && !dilOpen) {
+        dilSaved.classList.remove("hidden");
+        dilSaved.innerHTML =
+          "<strong>Diligência sobre o memorial:</strong> " + esc(dilTxt);
+      } else {
+        dilSaved.classList.add("hidden");
+        dilSaved.innerHTML = "";
+      }
+    }
+    if (obsSaved) {
+      if (obsTxt && !obsOpen) {
+        obsSaved.classList.remove("hidden");
+        obsSaved.innerHTML =
+          "<strong>Observação sobre o memorial:</strong> " + esc(obsTxt);
+      } else {
+        obsSaved.classList.add("hidden");
+        obsSaved.innerHTML = "";
+      }
+    }
+
+    const clearDil = $("btnClearMemorialDil");
+    const clearObs = $("btnClearMemorialObs");
+    if (clearDil) clearDil.classList.toggle("hidden", !dilTxt);
+    if (clearObs) clearObs.classList.toggle("hidden", !obsTxt);
   }
 
   function checkImpedimento() {
@@ -1186,7 +1286,7 @@
         toast(
           "Diligência salva no item " +
             (state.req.itens[i].criterionId || i) +
-            ". Use “Gerar diligência (PDF)” quando quiser.",
+            ". Use “Gerar Diligência” na seção 5 quando quiser.",
           "ok"
         );
       });
@@ -1416,6 +1516,10 @@
       });
       state.req = data;
       state.memorialFavoravel = true;
+      state.memorialDiligencia = "";
+      state.memorialObservacao = "";
+      state.memorialDiligenciaOpen = false;
+      state.memorialObsOpen = false;
       state._avaliacao = null;
       state.hipotesesSelecionadas = [];
       state.confirmedFields = {};
@@ -1431,6 +1535,7 @@
       renderHipotesesDropdown();
       $("step2").classList.remove("hidden");
       $("stepMemorial").classList.remove("hidden");
+      if ($("stepDiligencias")) $("stepDiligencias").classList.remove("hidden");
       $("step3").classList.remove("hidden");
       renderMemorial();
       updateAvaliacao();
@@ -1568,6 +1673,9 @@
       assinantes: collectAssinantes(),
       relator: collectRelator(),
       memorialFavoravel: state.memorialFavoravel !== false,
+      memorialDiligencia: (state.memorialDiligencia || "").trim(),
+      memorialObservacao: (state.memorialObservacao || "").trim(),
+      diligenciaGeral: (state.diligenciaGeral || "").trim(),
       avaliacao: av,
       complexidadeDesc: av.nivel?.complexidadeDesc,
       itensRelatorio: (state.req.itens || [])
@@ -1681,9 +1789,10 @@
       (i) => i.diligencia && i.diligencia.texto
     );
     const dilGeral = (state.diligenciaGeral || "").trim();
-    if (!itensDil.length && !dilGeral) {
+    const dilMemorial = (state.memorialDiligencia || "").trim();
+    if (!itensDil.length && !dilGeral && !dilMemorial) {
       return toast(
-        "Inclua diligência em ao menos um critério ou use “Inserir diligência sem vínculo a critérios”.",
+        "Inclua diligência em ao menos um critério, no memorial ou use “Inserir uma diligência geral”.",
         "err"
       );
     }
@@ -1703,6 +1812,7 @@
       relator,
       avaliacao: av,
       diligenciaGeral: dilGeral,
+      memorialDiligencia: dilMemorial,
       itensDiligencia: itensDil.map((i) => ({
         criterionId: i.criterionId,
         grupo: i.grupo,
@@ -1722,7 +1832,11 @@
         bytes,
         `Diligencia_RSC_${nomeArquivoServidor(state.req)}_${state.req.siape || "servidor"}_${state.numeroProcesso.replace(/\W/g, "_")}.pdf`
       );
-      toast("PDF de diligência gerado (data de hoje).", "ok");
+      markHouveDiligenciasAposGerar();
+      toast(
+        "PDF de diligência gerado. “Houve diligências” marcado com data de envio = hoje.",
+        "ok"
+      );
     } catch (e) {
       console.error(e);
       toast(e.message || "Erro ao gerar diligência", "err");
@@ -1742,8 +1856,41 @@
     return "";
   }
 
+  /** Normaliza data BR ou ISO para YYYY-MM-DD (comparação / inputs type=date). */
+  function toIsoDate(val) {
+    if (!val) return "";
+    const s = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    return brToIsoDate(s);
+  }
+
+  /**
+   * Ao restaurar backup com diligência(s) registrada(s):
+   * - marca "Houve diligências"
+   * - preserva data de envio se já existir no backup
+   * - data de retorno = data do carregamento (hoje no dispositivo; usuário pode ajustar, inclusive para o futuro)
+   * @returns {boolean} true se aplicou a regra
+   */
+  function maybeAutoHouveDiligenciasOnBackupRestore() {
+    const hasDilContent = countDiligencias().total > 0;
+    const hadFlagOrEnvio =
+      !!state.diligencias || !!toIsoDate(state.dataEnvioDiligencia);
+    if (!hasDilContent && !hadFlagOrEnvio) return false;
+
+    const loadDate = todayISO();
+    state.diligencias = true;
+    if (toIsoDate(state.dataEnvioDiligencia)) {
+      state.dataEnvioDiligencia = toIsoDate(state.dataEnvioDiligencia);
+    }
+    // Retorno = dia em que o backup está sendo carregado
+    state.dataRetornoDiligencia = loadDate;
+    syncDiligenciaDatasUI();
+    return true;
+  }
+
   /**
    * Snapshot completo da sessão — backup não deve perder informação.
+   * Campos novos usam default no restore (compatível com backups anteriores).
    */
   function buildSnapshot() {
     const justEl = $("justificativa");
@@ -1763,6 +1910,10 @@
         dataRetornoDiligencia: state.dataRetornoDiligencia,
         vigencia: state.vigencia,
         memorialFavoravel: state.memorialFavoravel !== false,
+        memorialDiligencia: state.memorialDiligencia || "",
+        memorialObservacao: state.memorialObservacao || "",
+        memorialDiligenciaOpen: false,
+        memorialObsOpen: false,
         hipotesesSelecionadas: cloneJson(state.hipotesesSelecionadas || []),
         signerChecked: cloneJson(state.signerChecked || {}),
         relatorSiape: state.relatorSiape || "",
@@ -1798,6 +1949,9 @@
         step2Visible: !$("step2") || !$("step2").classList.contains("hidden"),
         stepMemorialVisible:
           !$("stepMemorial") || !$("stepMemorial").classList.contains("hidden"),
+        stepDiligenciasVisible:
+          !$("stepDiligencias") ||
+          !$("stepDiligencias").classList.contains("hidden"),
         step3Visible: !$("step3") || !$("step3").classList.contains("hidden"),
         fileName: ($("fileName") && $("fileName").textContent) || "",
       },
@@ -2038,6 +2192,10 @@
       state.vigencia = s.vigencia || "";
       state.memorialFavoravel =
         s.memorialFavoravel != null ? !!s.memorialFavoravel : true;
+      state.memorialDiligencia = s.memorialDiligencia || "";
+      state.memorialObservacao = s.memorialObservacao || "";
+      state.memorialDiligenciaOpen = false;
+      state.memorialObsOpen = false;
       state.hipotesesSelecionadas = cloneJson(
         s.hipotesesSelecionadas || []
       );
@@ -2098,6 +2256,8 @@
       if (state.req) {
         $("step2").classList.remove("hidden");
         $("stepMemorial").classList.remove("hidden");
+        if ($("stepDiligencias"))
+          $("stepDiligencias").classList.remove("hidden");
         $("step3").classList.remove("hidden");
         const btnCmp = $("btnToggleCompare");
         if (btnCmp) btnCmp.disabled = false;
@@ -2111,6 +2271,7 @@
       } else {
         $("step2").classList.add("hidden");
         $("stepMemorial").classList.add("hidden");
+        if ($("stepDiligencias")) $("stepDiligencias").classList.add("hidden");
         $("step3").classList.add("hidden");
         if ($("identBox")) {
           $("identBox").classList.add("hidden");
@@ -2124,14 +2285,23 @@
         if ($("metricsBox")) $("metricsBox").innerHTML = "";
       }
 
+      // Só no restore de arquivo de backup (não na sessão automática do navegador).
+      let autoHouveDil = false;
+      if (opts.fromBackup) {
+        autoHouveDil = maybeAutoHouveDiligenciasOnBackupRestore();
+      }
+
       updateSessionStatus(snap);
       if (opts.toast !== false) {
-        toast(
+        let msg =
           "Sessão restaurada" +
-            (snap.savedAtLabel ? " (" + snap.savedAtLabel + ")" : "") +
-            ".",
-          "ok"
-        );
+          (snap.savedAtLabel ? " (" + snap.savedAtLabel + ")" : "") +
+          ".";
+        if (autoHouveDil) {
+          msg +=
+            " “Houve diligências” marcado; data de retorno = data deste carregamento (ajuste se precisar).";
+        }
+        toast(msg, "ok");
       }
       return true;
     } catch (e) {
@@ -2169,6 +2339,10 @@
     state.dataRetornoDiligencia = "";
     state.vigencia = fmtDateBr(todayISO());
     state.memorialFavoravel = true;
+    state.memorialDiligencia = "";
+    state.memorialObservacao = "";
+    state.memorialDiligenciaOpen = false;
+    state.memorialObsOpen = false;
     state.hipotesesSelecionadas = [];
     state.signerChecked = {};
     state.relatorSiape = "";
@@ -2208,6 +2382,7 @@
     }
     if ($("step2")) $("step2").classList.add("hidden");
     if ($("stepMemorial")) $("stepMemorial").classList.add("hidden");
+    if ($("stepDiligencias")) $("stepDiligencias").classList.add("hidden");
     if ($("step3")) $("step3").classList.add("hidden");
     if ($("checklistBody")) $("checklistBody").innerHTML = "";
     if ($("metricsBox")) $("metricsBox").innerHTML = "";
@@ -2215,6 +2390,13 @@
     if ($("btnParecer")) $("btnParecer").disabled = true;
     if ($("btnToggleCompare")) $("btnToggleCompare").disabled = true;
     if ($("fileInput")) $("fileInput").value = "";
+    if ($("diligenciaGeralTxt")) $("diligenciaGeralTxt").value = "";
+    if ($("diligenciaGeralSaved")) {
+      $("diligenciaGeralSaved").classList.add("hidden");
+      $("diligenciaGeralSaved").innerHTML = "";
+    }
+    if ($("diligenciaGeralPanel"))
+      $("diligenciaGeralPanel").classList.add("hidden");
 
     syncDiligenciaDatasUI();
     renderSigners();
@@ -2235,7 +2417,7 @@
         toast("JSON não parece um backup desta ferramenta.", "err");
         return;
       }
-      if (applySnapshot(snap)) {
+      if (applySnapshot(snap, { fromBackup: true })) {
         persistSession();
       }
     } catch (e) {
@@ -2307,6 +2489,103 @@
       updateAvaliacao();
       scheduleAutosave();
     });
+    const btnMemDil = $("btnMemorialDil");
+    if (btnMemDil) {
+      btnMemDil.addEventListener("click", () => {
+        state.memorialObsOpen = false;
+        state.memorialDiligenciaOpen = !state.memorialDiligenciaOpen;
+        renderMemorial();
+        if (state.memorialDiligenciaOpen) {
+          const ta = $("memorialDilTxt");
+          if (ta) {
+            ta.value = state.memorialDiligencia || "";
+            ta.focus();
+          }
+        }
+      });
+    }
+    const btnMemObs = $("btnMemorialObs");
+    if (btnMemObs) {
+      btnMemObs.addEventListener("click", () => {
+        state.memorialDiligenciaOpen = false;
+        state.memorialObsOpen = !state.memorialObsOpen;
+        renderMemorial();
+        if (state.memorialObsOpen) {
+          const ta = $("memorialObsTxt");
+          if (ta) {
+            ta.value = state.memorialObservacao || "";
+            ta.focus();
+          }
+        }
+      });
+    }
+    if ($("btnSaveMemorialDil")) {
+      $("btnSaveMemorialDil").addEventListener("click", () => {
+        const ta = $("memorialDilTxt");
+        const txt = (ta && ta.value.trim()) || "";
+        if (!txt) {
+          toast("Descreva a diligência sobre o memorial antes de salvar.", "err");
+          return;
+        }
+        state.memorialDiligencia = txt;
+        state.memorialDiligenciaOpen = false;
+        renderMemorial();
+        updateDiligenciaBtn();
+        scheduleAutosave();
+        toast(
+          "Diligência do memorial salva. Use “Gerar Diligência” na seção 5 quando quiser.",
+          "ok"
+        );
+      });
+    }
+    if ($("btnCancelMemorialDil")) {
+      $("btnCancelMemorialDil").addEventListener("click", () => {
+        state.memorialDiligenciaOpen = false;
+        renderMemorial();
+      });
+    }
+    if ($("btnClearMemorialDil")) {
+      $("btnClearMemorialDil").addEventListener("click", () => {
+        state.memorialDiligencia = "";
+        state.memorialDiligenciaOpen = false;
+        if ($("memorialDilTxt")) $("memorialDilTxt").value = "";
+        renderMemorial();
+        updateDiligenciaBtn();
+        scheduleAutosave();
+        toast("Diligência do memorial removida.", "ok");
+      });
+    }
+    if ($("btnSaveMemorialObs")) {
+      $("btnSaveMemorialObs").addEventListener("click", () => {
+        const ta = $("memorialObsTxt");
+        const txt = (ta && ta.value.trim()) || "";
+        if (!txt) {
+          toast("Digite a observação sobre o memorial antes de salvar.", "err");
+          return;
+        }
+        state.memorialObservacao = txt;
+        state.memorialObsOpen = false;
+        renderMemorial();
+        scheduleAutosave();
+        toast("Observação do memorial salva.", "ok");
+      });
+    }
+    if ($("btnCancelMemorialObs")) {
+      $("btnCancelMemorialObs").addEventListener("click", () => {
+        state.memorialObsOpen = false;
+        renderMemorial();
+      });
+    }
+    if ($("btnClearMemorialObs")) {
+      $("btnClearMemorialObs").addEventListener("click", () => {
+        state.memorialObservacao = "";
+        state.memorialObsOpen = false;
+        if ($("memorialObsTxt")) $("memorialObsTxt").value = "";
+        renderMemorial();
+        scheduleAutosave();
+        toast("Observação do memorial removida.", "ok");
+      });
+    }
     $("numProcesso").addEventListener("input", (e) => {
       state.numeroProcesso = e.target.value;
       scheduleAutosave();

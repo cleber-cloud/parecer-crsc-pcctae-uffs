@@ -72,25 +72,6 @@
         </div>
         <div style="display:flex;flex-direction:column;gap:.55rem;justify-content:flex-end">
           <label class="signer" style="margin:0"><input id="chkPrioridade" type="checkbox" /> Prioridade legal</label>
-          <label class="signer" style="margin:0" title="Marque apenas no parecer final, se a diligência já retornou">
-            <input id="chkDiligencias" type="checkbox" /> Houve diligências
-            <span class="muted small" style="font-weight:500">(parecer final — diligência já devolvida)</span>
-          </label>
-        </div>
-      </div>
-      <div id="diligenciaDatas" class="diligencia-datas hidden">
-        <p class="muted small" style="margin:0 0 .65rem">
-          Datas para o <strong>parecer final</strong> (diligência já cumprida e processo de volta à comissão).
-        </p>
-        <div class="grid-2">
-          <div>
-            <label for="dataEnvioDil">Data de envio da diligência ao servidor *</label>
-            <input id="dataEnvioDil" type="date" />
-          </div>
-          <div>
-            <label for="dataRetornoDil">Data de retorno do processo à comissão *</label>
-            <input id="dataRetornoDil" type="date" />
-          </div>
         </div>
       </div>
       <div id="impedimentoAlert" class="alert alert-warn hidden" style="margin-top:1rem"></div>
@@ -145,23 +126,6 @@
         <button type="button" class="btn btn-secondary" id="btnEditQtdDecl">Editar quantidade declarada</button>
       </div>
       <div id="checklistBody" class="checklist-groups" style="margin-top:1rem"></div>
-      <div id="diligenciaGeralPanel" class="diligencia-geral-panel hidden" style="margin-top:1rem">
-        <label for="diligenciaGeralTxt"><strong>Diligência geral</strong> (sem vínculo a critérios específicos)</label>
-        <p class="muted small" style="margin:.25rem 0 .5rem">
-          Use quando o pedido de esclarecimento ou complemento não se refere a um item pontuado do catálogo.
-        </p>
-        <textarea id="diligenciaGeralTxt" placeholder="Descreva a diligência geral…"></textarea>
-        <div class="btn-row" style="margin-top:.55rem">
-          <button type="button" class="btn btn-primary" id="btnSaveDilGeral">Salvar diligência geral</button>
-          <button type="button" class="btn btn-secondary" id="btnCancelDilGeral">Cancelar</button>
-          <button type="button" class="btn btn-secondary" id="btnClearDilGeral">Remover</button>
-        </div>
-      </div>
-      <div id="diligenciaGeralSaved" class="diligencia-saved hidden" style="margin-top:.75rem"></div>
-      <div class="btn-row btn-row-split" style="margin-top:1.25rem">
-        <button type="button" class="btn btn-secondary" id="btnDilGeral">Inserir diligência sem vínculo a critérios</button>
-        <button type="button" class="btn btn-diligencia-gerar" id="btnGerarDiligencia" disabled>Gerar diligência (PDF)</button>
-      </div>
     </section>
 
     <section class="card hidden" id="stepMemorial">
@@ -177,10 +141,93 @@
           <span>Não favorável</span>
         </button>
       </div>
+      <div class="memorial-actions" role="group" aria-label="Diligência e observação do memorial">
+        <button type="button" class="chip-btn chip-dil" id="btnMemorialDil" title="Diligência sobre o memorial">
+          <span class="chip-ico" aria-hidden="true">⚑</span>
+          <span>Diligência</span>
+        </button>
+        <button type="button" class="chip-btn chip-obs" id="btnMemorialObs" title="Observação sobre o memorial">
+          <span class="chip-ico" aria-hidden="true">💬</span>
+          <span>Observação</span>
+        </button>
+      </div>
+      <div id="memorialDilSaved" class="diligencia-saved hidden" style="margin-top:.75rem"></div>
+      <div id="memorialObsSaved" class="obs-saved hidden" style="margin-top:.55rem"></div>
+      <div id="memorialDilPanel" class="diligencia-box memorial-panel hidden" style="margin-top:.75rem">
+        <label for="memorialDilTxt"><strong>Diligência sobre o memorial</strong></label>
+        <textarea id="memorialDilTxt" placeholder="Descreva a diligência referente ao memorial apresentado…"></textarea>
+        <div class="btn-row">
+          <button type="button" class="btn btn-primary" id="btnSaveMemorialDil">Salvar diligência</button>
+          <button type="button" class="btn btn-secondary" id="btnCancelMemorialDil">Cancelar</button>
+          <button type="button" class="btn btn-secondary" id="btnClearMemorialDil">Remover</button>
+        </div>
+      </div>
+      <div id="memorialObsPanel" class="obs-box memorial-panel hidden" style="margin-top:.75rem">
+        <label for="memorialObsTxt"><strong>Observação sobre o memorial</strong></label>
+        <textarea id="memorialObsTxt" placeholder="Anotação ou ressalva da comissão sobre o memorial…"></textarea>
+        <div class="btn-row">
+          <button type="button" class="btn btn-primary" id="btnSaveMemorialObs">Salvar observação</button>
+          <button type="button" class="btn btn-secondary" id="btnCancelMemorialObs">Cancelar</button>
+          <button type="button" class="btn btn-secondary" id="btnClearMemorialObs">Remover</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card hidden" id="stepDiligencias">
+      <h3>5. Diligências</h3>
+      <p class="muted small" style="margin:0">
+        Consolide diligências dos critérios, do memorial e a diligência geral. Em seguida, gere o PDF de diligência.
+      </p>
+      <div class="btn-row btn-row-dil-geral" style="margin-top:1rem">
+        <button type="button" class="btn btn-secondary" id="btnDilGeral">Inserir uma diligência geral</button>
+      </div>
+      <div id="diligenciaGeralPanel" class="diligencia-geral-panel hidden" style="margin-top:1rem">
+        <label for="diligenciaGeralTxt"><strong>Diligência geral</strong> (sem vínculo a critérios específicos)</label>
+        <p class="muted small" style="margin:.25rem 0 .5rem">
+          Use quando o pedido de esclarecimento ou complemento não se refere a um item pontuado do catálogo nem ao memorial.
+        </p>
+        <textarea id="diligenciaGeralTxt" placeholder="Descreva a diligência geral…"></textarea>
+        <div class="btn-row" style="margin-top:.55rem">
+          <button type="button" class="btn btn-primary" id="btnSaveDilGeral">Salvar diligência geral</button>
+          <button type="button" class="btn btn-secondary" id="btnCancelDilGeral">Cancelar</button>
+          <button type="button" class="btn btn-secondary" id="btnClearDilGeral">Remover</button>
+        </div>
+      </div>
+      <div id="diligenciaGeralSaved" class="diligencia-saved hidden" style="margin-top:.75rem"></div>
+      <div class="btn-row btn-row-gerar-diligencia" style="margin-top:1.25rem">
+        <button type="button" class="btn btn-diligencia-gerar" id="btnGerarDiligencia" disabled>Gerar Diligência</button>
+      </div>
+      <div class="diligencia-houve-block" style="margin-top:1.25rem">
+        <label class="signer diligencia-houve-chk" style="margin:0;display:flex;align-items:flex-start;gap:.45rem" title="Marque no parecer final, se a diligência já retornou">
+          <input id="chkDiligencias" type="checkbox" />
+          <span>
+            <strong>Houve diligências</strong>
+            <span class="muted small" style="font-weight:500;display:block">
+              Parecer final — diligência enviada e/ou devolvida. As datas aparecem ao marcar.
+            </span>
+          </span>
+        </label>
+        <div id="diligenciaDatas" class="diligencia-datas" aria-hidden="true">
+          <div class="diligencia-datas-inner">
+            <div class="grid-2">
+              <div>
+                <label for="dataEnvioDil">Data de envio da diligência ao servidor *</label>
+                <input id="dataEnvioDil" type="date" />
+                <p class="muted small" style="margin:.3rem 0 0">Preenchida automaticamente ao gerar a diligência (hoje).</p>
+              </div>
+              <div>
+                <label for="dataRetornoDil">Data de retorno do processo à comissão *</label>
+                <input id="dataRetornoDil" type="date" />
+                <p class="muted small" style="margin:.3rem 0 0">Ao restaurar backup, assume a data do carregamento (hoje ou a que você ajustar).</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="card hidden" id="step3">
-      <h3>5. Análise e parecer</h3>
+      <h3>6. Análise e parecer</h3>
       <div id="metricsBox" class="metrics"></div>
       <div id="hipotesesBox" class="alert alert-info hidden" style="margin-top:1rem"></div>
 
