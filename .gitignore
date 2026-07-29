@@ -1,5 +1,6 @@
 # Amostras locais de PDF (não versionar)
 _fixtures/*.pdf
 _fixtures/node_modules/
+tmp/
 .DS_Store
 Thumbs.db
